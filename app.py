@@ -33,7 +33,7 @@ base_opening_balance = st.sidebar.number_input("Opening Balance", value=500, key
 base_avg_demand = st.sidebar.number_input("Average Demand", value=25, key="base_ad")
 base_cov = st.sidebar.number_input("Coefficient of Variation", value=0.8, key="base_cov")
 base_lead_time = st.sidebar.number_input("Lead Time (Days)", value=3, key="base_lt")
-base_reorder_point = st.sidebar.number_input("Reorder Point", value=350, key="base_rop") # Default set to 350
+base_reorder_point = st.sidebar.number_input("Reorder Point", value=350, key="base_rop")
 base_order_qty = st.sidebar.number_input("Order Quantity", value=300, key="base_oq")
 base_unit_value = st.sidebar.number_input("Value Per Unit", value=100, key="base_uv")
 base_holding_cost_percent = st.sidebar.number_input("Holding Cost (% of Value)", value=20.0, key="base_hc")
@@ -82,7 +82,7 @@ with col2:
         scen_avg_demand = s_col_b.number_input("Average Demand", value=25, key="scen_ad")
         scen_cov = s_col_a.number_input("Coefficient of Variation", value=0.8, key="scen_cov")
         scen_lead_time = s_col_b.number_input("Lead Time (Days)", value=3, key="scen_lt")
-        scen_reorder_point = s_col_a.number_input("Reorder Point", value=350, key="scen_rop") # Default set to 350
+        scen_reorder_point = s_col_a.number_input("Reorder Point", value=350, key="scen_rop")
         scen_order_qty = s_col_b.number_input("Order Quantity", value=300, key="scen_oq")
         scen_unit_value = s_col_a.number_input("Value Per Unit", value=100, key="scen_uv")
         scen_holding_cost_percent = s_col_b.number_input("Holding Cost (% of Value)", value=20.0, key="scen_hc")
@@ -140,9 +140,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
         "Inventory Position", "New Order", "Closing Balance", "Closing Balance Including Pipeline"
     ])
     
-    # ------------------------------------------------
     # Cost Comparison Logic (EOQ inner sim)
-    # ------------------------------------------------
     def sim_cost(test_oq):
         inv = op_bal
         pl_orders = []
@@ -167,7 +165,6 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
             hc_total += (clos_pipe * uv) * hc_rate / 365
         return hc_total + (orders_count * oc)
 
-    # Calculate EOQ
     annual_demand = avg_dem * 365
     holding_cost_per_unit = uv * hc_rate
     eoq = np.sqrt((2 * annual_demand * oc) / holding_cost_per_unit) if holding_cost_per_unit > 0 else 0
@@ -175,7 +172,6 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
     cost_current_policy = sim_cost(oq)
     cost_eoq_policy = sim_cost(int(eoq))
 
-    # Compile KPIs
     kpis = {}
     kpis["stockout_days"] = (df["Closing Balance"] == 0).sum()
     kpis["average_inventory"] = df["Closing Balance Including Pipeline"].mean()
@@ -223,40 +219,35 @@ def calc_delta(base, scen):
     pct = (diff / base) * 100
     return f"{diff:,.0f} ({pct:+.1f}%)"
 
-def delta_inv(base, scen):
-    # Inverse color logic for metrics where lower is better
-    diff = scen - base
-    return diff
-
 # ------------------------------------------------
 # KPI Displays (Comparing Scenario to Base)
 # ------------------------------------------------
-st.subheader("Inventory KPIs[cite: 3]")
+st.subheader("Inventory KPIs")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Stockout Days", kpis_scen["stockout_days"], calc_delta(kpis_base["stockout_days"], kpis_scen["stockout_days"]), delta_color="inverse")
 c2.metric("Average Age of Inventory", round(kpis_scen["average_age_inventory"], 1), calc_delta(kpis_base["average_age_inventory"], kpis_scen["average_age_inventory"]), delta_color="inverse")
 c3.metric("Average Inventory", round(kpis_scen["average_inventory"], 0), calc_delta(kpis_base["average_inventory"], kpis_scen["average_inventory"]), delta_color="inverse")
 c4.metric("Avg Working Capital", round(kpis_scen["average_working_capital"], 0), calc_delta(kpis_base["average_working_capital"], kpis_scen["average_working_capital"]), delta_color="inverse")
 
-st.subheader("Inventory Range[cite: 3]")
+st.subheader("Inventory Range")
 r1, r2, r3, r4 = st.columns(4)
 r1.metric("Minimum Inventory", round(kpis_scen["min_inventory"], 0), calc_delta(kpis_base["min_inventory"], kpis_scen["min_inventory"]))
 r2.metric("Maximum Inventory", round(kpis_scen["max_inventory"], 0), calc_delta(kpis_base["max_inventory"], kpis_scen["max_inventory"]))
 r3.metric("Minimum Working Capital", round(kpis_scen["min_wc"], 0), calc_delta(kpis_base["min_wc"], kpis_scen["min_wc"]))
 r4.metric("Maximum Working Capital", round(kpis_scen["max_wc"], 0), calc_delta(kpis_base["max_wc"], kpis_scen["max_wc"]))
 
-st.subheader("Inventory Cost Metrics[cite: 3]")
+st.subheader("Inventory Cost Metrics")
 cc1, cc2, cc3 = st.columns(3)
 cc1.metric("Total Holding Cost", round(kpis_scen["total_holding_cost"], 0), calc_delta(kpis_base["total_holding_cost"], kpis_scen["total_holding_cost"]), delta_color="inverse")
 cc2.metric("Total Ordering Cost", round(kpis_scen["total_ordering_cost"], 0), calc_delta(kpis_base["total_ordering_cost"], kpis_scen["total_ordering_cost"]), delta_color="inverse")
 cc3.metric("Total Inventory Cost", round(kpis_scen["total_inventory_cost"], 0), calc_delta(kpis_base["total_inventory_cost"], kpis_scen["total_inventory_cost"]), delta_color="inverse")
 
-st.subheader("EOQ[cite: 3]")
+st.subheader("EOQ")
 e1, e2 = st.columns(2)
 e1.metric("Economic Order Quantity", round(kpis_scen["eoq"], 0), calc_delta(kpis_base["eoq"], kpis_scen["eoq"]))
 e2.metric("Selected Order Quantity", kpis_scen["selected_order_qty"], calc_delta(kpis_base["selected_order_qty"], kpis_scen["selected_order_qty"]))
 
-st.subheader("Cost Comparison[cite: 3]")
+st.subheader("Cost Comparison")
 k1, k2, k3 = st.columns(3)
 k1.metric("Cost with Current Policy", round(kpis_scen["cost_current"], 0), calc_delta(kpis_base["cost_current"], kpis_scen["cost_current"]), delta_color="inverse")
 k2.metric("Cost with EOQ", round(kpis_scen["cost_eoq"], 0), calc_delta(kpis_base["cost_eoq"], kpis_scen["cost_eoq"]), delta_color="inverse")
@@ -313,7 +304,4 @@ st.subheader("Simulation Data")
 tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
 
 with tab1:
-    st.dataframe(df_base, use_container_width=True)
-
-with tab2:
-    st.dataframe(df_scen, use_container_width=True)
+    st.dataframe(

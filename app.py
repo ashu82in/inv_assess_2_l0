@@ -104,6 +104,9 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
     pipeline_orders = []
     data = []
     
+    total_unmet_demand = 0
+    total_demand_volume = sum(demand_seq)
+    
     for day in range(num_days):
         shipment_received = 0
         for order in pipeline_orders.copy():
@@ -117,6 +120,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
         inventory -= demand_today
         
         if inventory < 0:
+            total_unmet_demand += abs(inventory)
             inventory = 0
             
         pipeline_qty = sum(qty for arrival, qty in pipeline_orders)
@@ -174,6 +178,13 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
 
     kpis = {}
     kpis["stockout_days"] = (df["Closing Balance"] == 0).sum()
+    
+    # Calculate Fill Rate
+    if total_demand_volume > 0:
+        kpis["fill_rate"] = ((total_demand_volume - total_unmet_demand) / total_demand_volume) * 100
+    else:
+        kpis["fill_rate"] = 100.0
+        
     kpis["average_inventory"] = df["Closing Balance Including Pipeline"].mean()
     kpis["average_age_inventory"] = kpis["average_inventory"] / df["Demand"].mean() if df["Demand"].mean() > 0 else 0
     
@@ -223,11 +234,12 @@ def calc_delta(base, scen):
 # KPI Displays (Comparing Scenario to Base)
 # ------------------------------------------------
 st.subheader("Inventory KPIs")
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Stockout Days", kpis_scen["stockout_days"], calc_delta(kpis_base["stockout_days"], kpis_scen["stockout_days"]), delta_color="inverse")
-c2.metric("Average Age of Inventory", round(kpis_scen["average_age_inventory"], 1), calc_delta(kpis_base["average_age_inventory"], kpis_scen["average_age_inventory"]), delta_color="inverse")
-c3.metric("Average Inventory", round(kpis_scen["average_inventory"], 0), calc_delta(kpis_base["average_inventory"], kpis_scen["average_inventory"]), delta_color="inverse")
-c4.metric("Avg Working Capital", round(kpis_scen["average_working_capital"], 0), calc_delta(kpis_base["average_working_capital"], kpis_scen["average_working_capital"]), delta_color="inverse")
+c2.metric("Fill Rate (%)", f"{kpis_scen['fill_rate']:.1f}%", calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"]))
+c3.metric("Avg Age of Inv", round(kpis_scen["average_age_inventory"], 1), calc_delta(kpis_base["average_age_inventory"], kpis_scen["average_age_inventory"]), delta_color="inverse")
+c4.metric("Avg Inventory", round(kpis_scen["average_inventory"], 0), calc_delta(kpis_base["average_inventory"], kpis_scen["average_inventory"]), delta_color="inverse")
+c5.metric("Avg Working Capital", round(kpis_scen["average_working_capital"], 0), calc_delta(kpis_base["average_working_capital"], kpis_scen["average_working_capital"]), delta_color="inverse")
 
 st.subheader("Inventory Range")
 r1, r2, r3, r4 = st.columns(4)
@@ -270,6 +282,25 @@ fig.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Closing Balance"], name="
 fig.add_hline(y=base_reorder_point, line_dash="dash", line_color="royalblue", annotation_text="Base Reorder Point")
 if base_reorder_point != scen_reorder_point:
     fig.add_hline(y=scen_reorder_point, line_dash="dash", line_color="darkorange", annotation_text="Scenario Reorder Point")
+
+# Add Stockout Widgets (Markers)
+stockouts_base = df_base[df_base["Closing Balance"] == 0]
+fig.add_trace(go.Scatter(
+    x=stockouts_base["Date"],
+    y=stockouts_base["Closing Balance"],
+    mode="markers",
+    name="Base Stockout",
+    marker=dict(color="red", size=9, symbol="x")
+))
+
+stockouts_scen = df_scen[df_scen["Closing Balance"] == 0]
+fig.add_trace(go.Scatter(
+    x=stockouts_scen["Date"],
+    y=stockouts_scen["Closing Balance"],
+    mode="markers",
+    name="Scenario Stockout",
+    marker=dict(color="darkred", size=10, symbol="circle-open", line=dict(width=2))
+))
 
 fig.update_layout(xaxis_title="Date", yaxis_title="Inventory Units", hovermode="x unified")
 fig.update_yaxes(rangemode="tozero")

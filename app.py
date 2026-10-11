@@ -290,7 +290,7 @@ fig.add_trace(go.Scatter(
     y=stockouts_base["Closing Balance"],
     mode="markers",
     name="Base Stockout",
-    marker=dict(color="red", size=9, symbol="x")
+    marker=dict(color="red", size=9, symbol="circle") 
 ))
 
 stockouts_scen = df_scen[df_scen["Closing Balance"] == 0]
@@ -299,7 +299,7 @@ fig.add_trace(go.Scatter(
     y=stockouts_scen["Closing Balance"],
     mode="markers",
     name="Scenario Stockout",
-    marker=dict(color="darkred", size=10, symbol="circle-open", line=dict(width=2))
+    marker=dict(color="darkred", size=10, symbol="circle") 
 ))
 
 fig.update_layout(xaxis_title="Date", yaxis_title="Inventory Units", hovermode="x unified")

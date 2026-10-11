@@ -242,16 +242,19 @@ cc1.metric("Total Holding Cost", round(kpis_scen["total_holding_cost"], 0), calc
 cc2.metric("Total Ordering Cost", round(kpis_scen["total_ordering_cost"], 0), calc_delta(kpis_base["total_ordering_cost"], kpis_scen["total_ordering_cost"]), delta_color="inverse")
 cc3.metric("Total Inventory Cost", round(kpis_scen["total_inventory_cost"], 0), calc_delta(kpis_base["total_inventory_cost"], kpis_scen["total_inventory_cost"]), delta_color="inverse")
 
+# ------------------------------------------------
+# EOQ & Cost Comparison Section
+# ------------------------------------------------
 with st.expander("EOQ (Economic Order Quantity) Analysis", expanded=False):
     e1, e2 = st.columns(2)
     e1.metric("Economic Order Quantity", round(kpis_scen["eoq"], 0), calc_delta(kpis_base["eoq"], kpis_scen["eoq"]))
     e2.metric("Selected Order Quantity", kpis_scen["selected_order_qty"], calc_delta(kpis_base["selected_order_qty"], kpis_scen["selected_order_qty"]))
 
-st.subheader("Cost Comparison")
-k1, k2, k3 = st.columns(3)
-k1.metric("Cost with Current Policy", round(kpis_scen["cost_current"], 0), calc_delta(kpis_base["cost_current"], kpis_scen["cost_current"]), delta_color="inverse")
-k2.metric("Cost with EOQ", round(kpis_scen["cost_eoq"], 0), calc_delta(kpis_base["cost_eoq"], kpis_scen["cost_eoq"]), delta_color="inverse")
-k3.metric("Savings Using EOQ", round(kpis_scen["savings_eoq"], 0), calc_delta(kpis_base["savings_eoq"], kpis_scen["savings_eoq"]))
+    st.subheader("Cost Comparison")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Cost with Current Policy", round(kpis_scen["cost_current"], 0), calc_delta(kpis_base["cost_current"], kpis_scen["cost_current"]), delta_color="inverse")
+    k2.metric("Cost with EOQ", round(kpis_scen["cost_eoq"], 0), calc_delta(kpis_base["cost_eoq"], kpis_scen["cost_eoq"]), delta_color="inverse")
+    k3.metric("Savings Using EOQ", round(kpis_scen["savings_eoq"], 0), calc_delta(kpis_base["savings_eoq"], kpis_scen["savings_eoq"]))
 
 st.divider()
 

@@ -304,4 +304,7 @@ st.subheader("Simulation Data")
 tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
 
 with tab1:
-    st.dataframe(
+    st.dataframe(df_base, use_container_width=True)
+
+with tab2:
+    st.dataframe(df_scen, use_container_width=True)

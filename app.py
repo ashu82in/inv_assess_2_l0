@@ -38,6 +38,7 @@ base_order_qty = st.sidebar.number_input("Order Quantity", value=300, key="base_
 base_unit_value = st.sidebar.number_input("Value Per Unit", value=100, key="base_uv")
 base_holding_cost_percent = st.sidebar.number_input("Holding Cost (% of Value)", value=20.0, key="base_hc")
 base_ordering_cost = st.sidebar.number_input("Ordering Cost Per Order", value=500, key="base_oc")
+base_allow_backorders = st.sidebar.checkbox("Allow Backorders", value=False, key="base_bo")
 num_days = st.sidebar.slider("Simulation Days", 100, 2000, 365, key="days")
 
 base_holding_cost_rate = base_holding_cost_percent / 100
@@ -87,6 +88,7 @@ with col2:
         scen_unit_value = s_col_a.number_input("Value Per Unit", value=100, key="scen_uv")
         scen_holding_cost_percent = s_col_b.number_input("Holding Cost (% of Value)", value=20.0, key="scen_hc")
         scen_ordering_cost = s_col_a.number_input("Ordering Cost Per Order", value=500, key="scen_oc")
+        scen_allow_backorders = s_col_a.checkbox("Allow Backorders", value=False, key="scen_bo")
 
 scen_holding_cost_rate = scen_holding_cost_percent / 100
 
@@ -99,7 +101,7 @@ else:
 # ------------------------------------------------
 # Simulation Function
 # ------------------------------------------------
-def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
+def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, allow_bo):
     inventory = op_bal
     pipeline_orders = []
     data = []
@@ -116,12 +118,21 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
                 
         opening = inventory
         inventory += shipment_received
+        
+        inv_before_demand = inventory
         demand_today = demand_seq[day]
         inventory -= demand_today
         
         if inventory < 0:
-            total_unmet_demand += abs(inventory)
-            inventory = 0
+            if inv_before_demand > 0:
+                unmet_today = abs(inventory)
+            else:
+                unmet_today = demand_today
+                
+            total_unmet_demand += unmet_today
+            
+            if not allow_bo:
+                inventory = 0
             
         pipeline_qty = sum(qty for arrival, qty in pipeline_orders)
         inventory_position = opening - demand_today + shipment_received + pipeline_qty
@@ -159,14 +170,21 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
             inv += rec
             dem_today = demand_seq[d]
             inv -= dem_today
-            if inv < 0: inv = 0
+            if inv < 0:
+                if not allow_bo:
+                    inv = 0
             pl_qty = sum(q for arr, q in pl_orders)
+            
+            # Holding cost only applies to positive inventory
+            on_hand_inv = max(0, inv)
+            clos_pipe = on_hand_inv + pl_qty
+            hc_total += (clos_pipe * uv) * hc_rate / 365
+            
             inv_pos = inv + pl_qty
             if inv_pos < rop:
                 pl_orders.append((d + lt, test_oq))
                 orders_count += 1
-            clos_pipe = inv + sum(q for arr, q in pl_orders)
-            hc_total += (clos_pipe * uv) * hc_rate / 365
+                
         return hc_total + (orders_count * oc)
 
     annual_demand = avg_dem * 365
@@ -177,7 +195,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
     cost_eoq_policy = sim_cost(int(eoq))
 
     kpis = {}
-    kpis["stockout_days"] = (df["Closing Balance"] == 0).sum()
+    kpis["stockout_days"] = (df["Closing Balance"] <= 0).sum()
     
     # Calculate Fill Rate
     if total_demand_volume > 0:
@@ -195,7 +213,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
     kpis["min_wc"] = df["Blocked Working Capital"].min()
     kpis["max_wc"] = df["Blocked Working Capital"].max()
     
-    df["Inventory Value"] = df["Closing Balance Including Pipeline"] * uv
+    df["Inventory Value"] = np.maximum(0, df["Closing Balance Including Pipeline"]) * uv
     df["Holding Cost"] = df["Inventory Value"] * hc_rate / 365
     kpis["total_holding_cost"] = df["Holding Cost"].sum()
     kpis["number_of_orders"] = (df["New Order"] > 0).sum()
@@ -215,12 +233,12 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc):
 # ------------------------------------------------
 df_base, kpis_base = run_simulation(
     base_demand, base_opening_balance, base_avg_demand, base_lead_time, base_reorder_point, 
-    base_order_qty, base_unit_value, base_holding_cost_rate, base_ordering_cost
+    base_order_qty, base_unit_value, base_holding_cost_rate, base_ordering_cost, base_allow_backorders
 )
 
 df_scen, kpis_scen = run_simulation(
     scen_demand, scen_opening_balance, scen_avg_demand, scen_lead_time, scen_reorder_point, 
-    scen_order_qty, scen_unit_value, scen_holding_cost_rate, scen_ordering_cost
+    scen_order_qty, scen_unit_value, scen_holding_cost_rate, scen_ordering_cost, scen_allow_backorders
 )
 
 def calc_delta(base, scen):
@@ -284,7 +302,7 @@ if base_reorder_point != scen_reorder_point:
     fig.add_hline(y=scen_reorder_point, line_dash="dash", line_color="darkorange", annotation_text="Scenario Reorder Point")
 
 # Add Stockout Widgets (Markers)
-stockouts_base = df_base[df_base["Closing Balance"] == 0]
+stockouts_base = df_base[df_base["Closing Balance"] <= 0]
 fig.add_trace(go.Scatter(
     x=stockouts_base["Date"],
     y=stockouts_base["Closing Balance"],
@@ -293,7 +311,7 @@ fig.add_trace(go.Scatter(
     marker=dict(color="red", size=9, symbol="circle") 
 ))
 
-stockouts_scen = df_scen[df_scen["Closing Balance"] == 0]
+stockouts_scen = df_scen[df_scen["Closing Balance"] <= 0]
 fig.add_trace(go.Scatter(
     x=stockouts_scen["Date"],
     y=stockouts_scen["Closing Balance"],
@@ -303,7 +321,7 @@ fig.add_trace(go.Scatter(
 ))
 
 fig.update_layout(xaxis_title="Date", yaxis_title="Inventory Units", hovermode="x unified")
-fig.update_yaxes(rangemode="tozero")
+# Removed rangemode="tozero" to allow the y-axis to dynamically display negative balances for backorders
 st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------------

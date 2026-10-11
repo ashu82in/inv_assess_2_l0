@@ -80,23 +80,39 @@ dates = pd.date_range(start="2024-01-01", periods=num_days)
 col1, col2 = st.columns([1, 1])
 
 with col2:
-    with st.expander("Scenario Inputs (Right Hand Side)", expanded=True):
-        st.markdown("### Scenario Configuration")
-        s_col_a, s_col_b = st.columns(2)
-        scen_opening_balance = s_col_a.number_input("Opening Balance", value=500, key="scen_ob")
-        scen_avg_demand = s_col_b.number_input("Average Demand", value=25, key="scen_ad")
-        scen_cov = s_col_a.number_input("Coefficient of Variation", value=0.8, key="scen_cov")
-        scen_lead_time = s_col_b.number_input("Lead Time (Days)", value=3, key="scen_lt")
-        scen_reorder_point = s_col_a.number_input("Reorder Point", value=350, key="scen_rop")
-        scen_order_qty = s_col_b.number_input("Order Quantity", value=300, key="scen_oq")
-        scen_unit_value = s_col_a.number_input("Value Per Unit", value=100, key="scen_uv")
-        scen_holding_cost_percent = s_col_b.number_input("Holding Cost (% of Value)", value=20.0, key="scen_hc")
-        scen_ordering_cost = s_col_a.number_input("Ordering Cost Per Order", value=500, key="scen_oc")
-        
-        st.markdown("#### Backorder Settings")
-        sb_col_a, sb_col_b = st.columns(2)
-        scen_allow_backorders = sb_col_a.checkbox("Allow Backorders", value=True, key="scen_bo")
-        scen_max_wait = sb_col_b.number_input("Max Wait Time (Days)", value=5, min_value=1, disabled=not scen_allow_backorders, key="scen_mw")
+    enable_scenario = st.checkbox("Enable Scenario Comparison", value=True)
+    
+    if enable_scenario:
+        with st.expander("Scenario Inputs (Right Hand Side)", expanded=True):
+            st.markdown("### Scenario Configuration")
+            s_col_a, s_col_b = st.columns(2)
+            scen_opening_balance = s_col_a.number_input("Opening Balance", value=500, key="scen_ob")
+            scen_avg_demand = s_col_b.number_input("Average Demand", value=25, key="scen_ad")
+            scen_cov = s_col_a.number_input("Coefficient of Variation", value=0.8, key="scen_cov")
+            scen_lead_time = s_col_b.number_input("Lead Time (Days)", value=3, key="scen_lt")
+            scen_reorder_point = s_col_a.number_input("Reorder Point", value=350, key="scen_rop")
+            scen_order_qty = s_col_b.number_input("Order Quantity", value=300, key="scen_oq")
+            scen_unit_value = s_col_a.number_input("Value Per Unit", value=100, key="scen_uv")
+            scen_holding_cost_percent = s_col_b.number_input("Holding Cost (% of Value)", value=20.0, key="scen_hc")
+            scen_ordering_cost = s_col_a.number_input("Ordering Cost Per Order", value=500, key="scen_oc")
+            
+            st.markdown("#### Backorder Settings")
+            sb_col_a, sb_col_b = st.columns(2)
+            scen_allow_backorders = sb_col_a.checkbox("Allow Backorders", value=True, key="scen_bo")
+            scen_max_wait = sb_col_b.number_input("Max Wait Time (Days)", value=5, min_value=1, disabled=not scen_allow_backorders, key="scen_mw")
+    else:
+        # Map scenario inputs directly to base case inputs if checkbox is unchecked
+        scen_opening_balance = base_opening_balance
+        scen_avg_demand = base_avg_demand
+        scen_cov = base_cov
+        scen_lead_time = base_lead_time
+        scen_reorder_point = base_reorder_point
+        scen_order_qty = base_order_qty
+        scen_unit_value = base_unit_value
+        scen_holding_cost_percent = base_holding_cost_percent
+        scen_ordering_cost = base_ordering_cost
+        scen_allow_backorders = base_allow_backorders
+        scen_max_wait = base_max_wait
 
 scen_holding_cost_rate = scen_holding_cost_percent / 100
 
@@ -112,7 +128,7 @@ else:
 def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, allow_bo, max_wait):
     physical_inventory = op_bal
     pipeline_orders = []
-    backorder_queue = [] # Stores lists: [day_created, quantity]
+    backorder_queue = [] 
     data = []
     
     total_unmet_demand_incidents = 0 
@@ -120,23 +136,20 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     total_demand_volume = sum(demand_seq)
     
     for day in range(num_days):
-        # 1. Receive incoming shipments
         shipment_received = sum(qty for arrival, qty in pipeline_orders if arrival == day)
         pipeline_orders = [order for order in pipeline_orders if order[0] > day]
         
         current_pool = physical_inventory + shipment_received
         opening_physical = physical_inventory
         
-        # 2. Expire backorders exceeding max wait time
         active_backorders = []
         for created_day, b_qty in backorder_queue:
             if (day - created_day) > max_wait:
-                total_lost_sales += b_qty # Customer left, sale lost
+                total_lost_sales += b_qty 
             else:
                 active_backorders.append([created_day, b_qty])
         backorder_queue = active_backorders
         
-        # 3. Fulfill active backorders with available pool
         for i in range(len(backorder_queue)):
             if current_pool <= 0:
                 break
@@ -148,10 +161,8 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
                 backorder_queue[i][1] -= current_pool
                 current_pool = 0
                 
-        # Remove fully fulfilled backorders
         backorder_queue = [b for b in backorder_queue if b[1] > 0]
         
-        # 4. Fulfill today's demand
         demand_today = demand_seq[day]
         unmet_today = 0
         if current_pool >= demand_today:
@@ -166,13 +177,11 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
             else:
                 total_lost_sales += unmet_today
                 
-        # 5. Compute end-of-day states
         pending_orders = sum(b[1] for b in backorder_queue)
         net_inventory = physical_inventory - pending_orders
         pipeline_qty = sum(qty for arr, qty in pipeline_orders)
         inventory_position = net_inventory + pipeline_qty
         
-        # 6. Reorder Trigger
         new_order = 0
         if inventory_position < rop:
             new_order = oq
@@ -190,7 +199,6 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
         "Inventory Position (Net + Pipeline)", "New Order", "Physical Inventory"
     ])
     
-    # Inner Cost Simulation for EOQ
     def sim_cost(test_oq):
         p_inv = op_bal
         p_orders = []
@@ -294,6 +302,8 @@ df_scen, kpis_scen = run_simulation(
 )
 
 def calc_delta(base, scen):
+    if not enable_scenario:
+        return ""
     if base == 0:
         return f"{scen - base:,.0f} (N/A)"
     diff = scen - base
@@ -341,45 +351,44 @@ with st.expander("EOQ (Economic Order Quantity) Analysis", expanded=False):
 st.divider()
 
 # ------------------------------------------------
-# New Detailed Behavior Charts
+# Detailed Behavior Charts
 # ------------------------------------------------
 
-# 1. Physical Inventory Graph
 st.subheader("Physical Inventory")
 fig_phys = go.Figure()
 fig_phys.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Physical Inventory"], name="Base Physical Inventory", line=dict(color='royalblue', width=2)))
-fig_phys.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Physical Inventory"], name="Scenario Physical Inventory", line=dict(color='darkorange', width=2)))
+if enable_scenario:
+    fig_phys.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Physical Inventory"], name="Scenario Physical Inventory", line=dict(color='darkorange', width=2)))
 
-# Stockout markers for Physical Inventory
 stockouts_base = df_base[df_base["Physical Inventory"] == 0]
 fig_phys.add_trace(go.Scatter(x=stockouts_base["Date"], y=stockouts_base["Physical Inventory"], mode="markers", name="Base Stockout", marker=dict(color="red", size=9, symbol="circle")))
-stockouts_scen = df_scen[df_scen["Physical Inventory"] == 0]
-fig_phys.add_trace(go.Scatter(x=stockouts_scen["Date"], y=stockouts_scen["Physical Inventory"], mode="markers", name="Scenario Stockout", marker=dict(color="darkred", size=10, symbol="circle")))
+
+if enable_scenario:
+    stockouts_scen = df_scen[df_scen["Physical Inventory"] == 0]
+    fig_phys.add_trace(go.Scatter(x=stockouts_scen["Date"], y=stockouts_scen["Physical Inventory"], mode="markers", name="Scenario Stockout", marker=dict(color="darkred", size=10, symbol="circle")))
 
 fig_phys.update_layout(xaxis_title="Date", yaxis_title="Units", hovermode="x unified")
 fig_phys.update_yaxes(rangemode="tozero")
 st.plotly_chart(fig_phys, use_container_width=True)
 
-
-# 2. Net Inventory Graph
 st.subheader("Net Inventory (Physical - Pending Orders)")
 fig_net = go.Figure()
 fig_net.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Net Inventory (Phys - Pending)"], name="Base Net Inventory", line=dict(color='royalblue', width=2)))
-fig_net.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Net Inventory (Phys - Pending)"], name="Scenario Net Inventory", line=dict(color='darkorange', width=2)))
+if enable_scenario:
+    fig_net.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Net Inventory (Phys - Pending)"], name="Scenario Net Inventory", line=dict(color='darkorange', width=2)))
 fig_net.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Zero Net Inventory")
 
 fig_net.update_layout(xaxis_title="Date", yaxis_title="Units", hovermode="x unified")
 st.plotly_chart(fig_net, use_container_width=True)
 
-
-# 3. Inventory Position Graph
 st.subheader("Inventory Position (Net + Pipeline Orders)")
 fig_pos = go.Figure()
 fig_pos.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Inventory Position (Net + Pipeline)"], name="Base Inv Position", line=dict(color='royalblue', width=2)))
-fig_pos.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Inventory Position (Net + Pipeline)"], name="Scenario Inv Position", line=dict(color='darkorange', width=2)))
+if enable_scenario:
+    fig_pos.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Inventory Position (Net + Pipeline)"], name="Scenario Inv Position", line=dict(color='darkorange', width=2)))
 
 fig_pos.add_hline(y=base_reorder_point, line_dash="dash", line_color="royalblue", annotation_text="Base Reorder Point")
-if base_reorder_point != scen_reorder_point:
+if enable_scenario and base_reorder_point != scen_reorder_point:
     fig_pos.add_hline(y=scen_reorder_point, line_dash="dash", line_color="darkorange", annotation_text="Scenario Reorder Point")
 
 fig_pos.update_layout(xaxis_title="Date", yaxis_title="Units", hovermode="x unified")
@@ -391,12 +400,12 @@ st.divider()
 # Demand Line Graph with Median
 # ------------------------------------------------
 st.subheader("Demand Trend over Time")
-median_demand = df_scen["Demand"].median()
+median_demand = df_base["Demand"].median()
 
 fig_demand = go.Figure()
 fig_demand.add_trace(go.Scatter(
-    x=df_scen["Date"], 
-    y=df_scen["Demand"], 
+    x=df_base["Date"], 
+    y=df_base["Demand"], 
     mode="lines", 
     name="Daily Demand",
     line=dict(color="mediumseagreen")
@@ -416,10 +425,11 @@ st.plotly_chart(fig_demand, use_container_width=True)
 # ------------------------------------------------
 st.subheader("Simulation Data")
 
-tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
-
-with tab1:
+if enable_scenario:
+    tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
+    with tab1:
+        st.dataframe(df_base, use_container_width=True)
+    with tab2:
+        st.dataframe(df_scen, use_container_width=True)
+else:
     st.dataframe(df_base, use_container_width=True)
-
-with tab2:
-    st.dataframe(df_scen, use_container_width=True)

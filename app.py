@@ -242,10 +242,10 @@ cc1.metric("Total Holding Cost", round(kpis_scen["total_holding_cost"], 0), calc
 cc2.metric("Total Ordering Cost", round(kpis_scen["total_ordering_cost"], 0), calc_delta(kpis_base["total_ordering_cost"], kpis_scen["total_ordering_cost"]), delta_color="inverse")
 cc3.metric("Total Inventory Cost", round(kpis_scen["total_inventory_cost"], 0), calc_delta(kpis_base["total_inventory_cost"], kpis_scen["total_inventory_cost"]), delta_color="inverse")
 
-st.subheader("EOQ")
-e1, e2 = st.columns(2)
-e1.metric("Economic Order Quantity", round(kpis_scen["eoq"], 0), calc_delta(kpis_base["eoq"], kpis_scen["eoq"]))
-e2.metric("Selected Order Quantity", kpis_scen["selected_order_qty"], calc_delta(kpis_base["selected_order_qty"], kpis_scen["selected_order_qty"]))
+with st.expander("EOQ (Economic Order Quantity) Analysis", expanded=False):
+    e1, e2 = st.columns(2)
+    e1.metric("Economic Order Quantity", round(kpis_scen["eoq"], 0), calc_delta(kpis_base["eoq"], kpis_scen["eoq"]))
+    e2.metric("Selected Order Quantity", kpis_scen["selected_order_qty"], calc_delta(kpis_base["selected_order_qty"], kpis_scen["selected_order_qty"]))
 
 st.subheader("Cost Comparison")
 k1, k2, k3 = st.columns(3)

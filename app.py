@@ -33,7 +33,7 @@ base_opening_balance = st.sidebar.number_input("Opening Balance", value=500, key
 base_avg_demand = st.sidebar.number_input("Average Demand", value=25, key="base_ad")
 base_cov = st.sidebar.number_input("Coefficient of Variation", value=0.8, key="base_cov")
 base_lead_time = st.sidebar.number_input("Lead Time (Days)", value=3, key="base_lt")
-base_reorder_point = st.sidebar.number_input("Reorder Point", value=200, key="base_rop")
+base_reorder_point = st.sidebar.number_input("Reorder Point", value=350, key="base_rop") # Default updated to 350
 base_order_qty = st.sidebar.number_input("Order Quantity", value=300, key="base_oq")
 base_unit_value = st.sidebar.number_input("Value Per Unit", value=100, key="base_uv")
 base_holding_cost_percent = st.sidebar.number_input("Holding Cost (% of Value)", value=20.0, key="base_hc")
@@ -42,12 +42,24 @@ num_days = st.sidebar.slider("Simulation Days", 100, 2000, 365, key="days")
 
 base_holding_cost_rate = base_holding_cost_percent / 100
 
-if "base_demand_sequence" not in st.session_state:
-    st.session_state.base_demand_sequence = None
-if st.sidebar.button("Reset Base Demand Scenario"):
-    st.session_state.base_demand_sequence = None
+# ------------------------------------------------
+# Synchronized Demand Generation
+# ------------------------------------------------
+if ("base_demand_sequence" not in st.session_state or 
+    st.session_state.get("sim_days") != num_days or 
+    st.session_state.get("sim_avg_demand") != base_avg_demand or 
+    st.session_state.get("sim_cov") != base_cov):
+    
+    np.random.seed(42)
+    st.session_state.base_demand_sequence = np.maximum(
+        0, np.random.normal(base_avg_demand, base_avg_demand * base_cov, num_days)
+    ).round()
+    st.session_state.sim_days = num_days
+    st.session_state.sim_avg_demand = base_avg_demand
+    st.session_state.sim_cov = base_cov
 
-if st.session_state.base_demand_sequence is None:
+if st.sidebar.button("Reset Base Demand Scenario"):
+    np.random.seed()
     st.session_state.base_demand_sequence = np.maximum(
         0, np.random.normal(base_avg_demand, base_avg_demand * base_cov, num_days)
     ).round()
@@ -76,10 +88,10 @@ with col2:
 
 scen_holding_cost_rate = scen_holding_cost_percent / 100
 
-# Use same demand sequence if parameters match, otherwise generate new one
 if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
     scen_demand = base_demand
 else:
+    np.random.seed(99)
     scen_demand = np.maximum(0, np.random.normal(scen_avg_demand, scen_avg_demand * scen_cov, num_days)).round()
 
 # ------------------------------------------------
@@ -126,7 +138,6 @@ def run_simulation(demand_seq, op_bal, lt, rop, oq, uv, hc_rate, oc):
         "Inventory Position", "New Order", "Closing Balance", "Closing Balance Including Pipeline"
     ])
     
-    # KPIs
     kpis = {}
     kpis["stockout_days"] = (df["Closing Balance"] == 0).sum()
     kpis["average_inventory"] = df["Closing Balance Including Pipeline"].mean()
@@ -160,7 +171,6 @@ df_scen, kpis_scen = run_simulation(
     scen_order_qty, scen_unit_value, scen_holding_cost_rate, scen_ordering_cost
 )
 
-# Helper function for percentage difference
 def calc_delta(base, scen):
     if base == 0:
         return f"{scen - base:,.0f} (N/A)"
@@ -187,31 +197,21 @@ cc3.metric("Total Inventory Cost (Scenario)", round(kpis_scen["total_inventory_c
 st.divider()
 
 # ------------------------------------------------
-# Base Case Inventory Behaviour Chart
+# Inventory Behaviour Chart (Both Cases)
 # ------------------------------------------------
-st.subheader("Base Case Inventory Behaviour")
+st.subheader("Inventory Behaviour: Base vs Scenario")
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Closing Balance"], name="Closing Inventory"))
-fig.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Closing Balance Including Pipeline"], name="Inventory Position"))
-fig.add_hline(y=base_reorder_point, line_dash="dash", annotation_text="Base Reorder Point")
 
-stockouts = df_base[df_base["Closing Balance"] == 0]
-fig.add_trace(go.Scatter(x=stockouts["Date"], y=stockouts["Closing Balance"], mode="markers", name="Stockout", marker=dict(color="red",size=9)))
+fig.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Closing Balance"], name="Base Closing Inventory", line=dict(color='royalblue', width=2)))
+fig.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Closing Balance"], name="Scenario Closing Inventory", line=dict(color='darkorange', width=2)))
 
-reorders = df_base[df_base["New Order"] > 0]
-fig.add_trace(go.Scatter(x=reorders["Date"], y=reorders["Closing Balance"], mode="markers", name="Reorder Trigger", marker=dict(color="green",symbol="triangle-up",size=10)))
+fig.add_hline(y=base_reorder_point, line_dash="dash", line_color="royalblue", annotation_text="Base Reorder Point")
+if base_reorder_point != scen_reorder_point:
+    fig.add_hline(y=scen_reorder_point, line_dash="dash", line_color="darkorange", annotation_text="Scenario Reorder Point")
 
-fig.add_hrect(y0=0, y1=base_reorder_point*0.5, fillcolor="red", opacity=0.08)
-fig.add_hrect(y0=base_reorder_point*0.5, y1=base_reorder_point, fillcolor="yellow", opacity=0.08)
-fig.add_hrect(y0=base_reorder_point, y1=df_base["Closing Balance Including Pipeline"].max()*1.2, fillcolor="green", opacity=0.05)
+fig.update_layout(xaxis_title="Date", yaxis_title="Inventory Units", hovermode="x unified")
 fig.update_yaxes(rangemode="tozero")
 st.plotly_chart(fig, use_container_width=True)
-
-# ------------------------------------------------
-# Data Table (Scenario Data Shown)
-# ------------------------------------------------
-st.subheader("Simulation Data (Scenario)")
-st.dataframe(df_scen)
 
 # ------------------------------------------------
 # Demand Line Graph with Median
@@ -225,7 +225,7 @@ fig_demand.add_trace(go.Scatter(
     y=df_scen["Demand"], 
     mode="lines", 
     name="Daily Demand",
-    line=dict(color="royalblue")
+    line=dict(color="mediumseagreen")
 ))
 fig_demand.add_hline(
     y=median_demand, 
@@ -236,3 +236,16 @@ fig_demand.add_hline(
 )
 fig_demand.update_layout(xaxis_title="Date", yaxis_title="Demand Quantity")
 st.plotly_chart(fig_demand, use_container_width=True)
+
+# ------------------------------------------------
+# Data Tables (Both Cases)
+# ------------------------------------------------
+st.subheader("Simulation Data")
+
+tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
+
+with tab1:
+    st.dataframe(df_base, use_container_width=True)
+
+with tab2:
+    st.dataframe(df_scen, use_container_width=True)

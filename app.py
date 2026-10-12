@@ -195,7 +195,11 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
         pending_orders = sum(b[1] for b in backorder_queue)
         
         # Calculate pending orders aging
-        aging_row = {"Date": dates[day], "Total Pending": pending_orders}
+        aging_row = {
+            "Date": dates[day], 
+            "Total Pending": pending_orders,
+            "Lost Sales": lost_sales_today # NEW: Added Lost Sales column
+        }
         for w in range(int(max_wait) + 1):
             aging_row[f"Pending {w} Days"] = 0
             

@@ -129,6 +129,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     pipeline_orders = []
     backorder_queue = [] 
     data = []
+    aging_data = []
     
     total_lost_sales = 0
     fulfillment_wait_counts = {0: 0}
@@ -141,11 +142,14 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
         current_pool = physical_inventory + shipment_received
         opening_physical = physical_inventory
         
+        lost_sales_today = 0
+        
         # Expire backorders past max wait
         active_backorders = []
         for created_day, b_qty in backorder_queue:
             if (day - created_day) > max_wait:
                 total_lost_sales += b_qty 
+                lost_sales_today += b_qty
             else:
                 active_backorders.append([created_day, b_qty])
         backorder_queue = active_backorders
@@ -186,8 +190,22 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
                 backorder_queue.append([day, unmet_today])
             else:
                 total_lost_sales += unmet_today
+                lost_sales_today += unmet_today
                 
         pending_orders = sum(b[1] for b in backorder_queue)
+        
+        # Calculate pending orders aging
+        aging_row = {"Date": dates[day], "Total Pending": pending_orders}
+        for w in range(int(max_wait) + 1):
+            aging_row[f"Pending {w} Days"] = 0
+            
+        for c_day, b_qty in backorder_queue:
+            age = day - c_day
+            if 0 <= age <= max_wait:
+                aging_row[f"Pending {age} Days"] += b_qty
+                
+        aging_data.append(aging_row)
+        
         net_inventory = physical_inventory - pending_orders
         pipeline_qty = sum(qty for arr, qty in pipeline_orders)
         inventory_position = net_inventory + pipeline_qty
@@ -200,14 +218,17 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
         data.append([
             dates[day], opening_physical, demand_today, shipment_received, 
             pending_orders, pipeline_qty, net_inventory, inventory_position, 
-            new_order, physical_inventory
+            new_order, physical_inventory, lost_sales_today
         ])
         
     df = pd.DataFrame(data, columns=[
         "Date", "Opening Balance", "Demand", "Shipment Received", 
         "Pending Orders", "Pipeline Order", "Net Inventory (Phys - Pending)", 
-        "Inventory Position (Net + Pipeline)", "New Order", "Physical Inventory"
+        "Inventory Position (Net + Pipeline)", "New Order", "Physical Inventory",
+        "Lost Sales"
     ])
+    
+    df_aging = pd.DataFrame(aging_data)
     
     def sim_cost(test_oq):
         p_inv = op_bal
@@ -306,17 +327,17 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     kpis["cost_eoq"] = cost_eoq_policy
     kpis["savings_eoq"] = cost_current_policy - cost_eoq_policy
     
-    return df, kpis
+    return df, df_aging, kpis
 
 # ------------------------------------------------
 # Run Simulations
 # ------------------------------------------------
-df_base, kpis_base = run_simulation(
+df_base, df_aging_base, kpis_base = run_simulation(
     base_demand, base_opening_balance, base_avg_demand, base_lead_time, base_reorder_point, 
     base_order_qty, base_unit_value, base_holding_cost_rate, base_ordering_cost, base_allow_backorders, base_max_wait
 )
 
-df_scen, kpis_scen = run_simulation(
+df_scen, df_aging_scen, kpis_scen = run_simulation(
     scen_demand, scen_opening_balance, scen_avg_demand, scen_lead_time, scen_reorder_point, 
     scen_order_qty, scen_unit_value, scen_holding_cost_rate, scen_ordering_cost, scen_allow_backorders, scen_max_wait
 )
@@ -446,25 +467,47 @@ if enable_scenario:
     fig_phys.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Physical Inventory"], name="Scenario Physical Inventory", line=dict(color='darkorange', width=2)))
 
 stockouts_base = df_base[df_base["Physical Inventory"] == 0]
-fig_phys.add_trace(go.Scatter(x=stockouts_base["Date"], y=stockouts_base["Physical Inventory"], mode="markers", name="Base Stockout", marker=dict(color="red", size=9, symbol="circle")))
+fig_phys.add_trace(go.Scatter(x=stockouts_base["Date"], y=stockouts_base["Physical Inventory"], mode="markers", name="Base Zero Balance", marker=dict(color="red", size=9, symbol="circle")))
 
 if enable_scenario:
     stockouts_scen = df_scen[df_scen["Physical Inventory"] == 0]
-    fig_phys.add_trace(go.Scatter(x=stockouts_scen["Date"], y=stockouts_scen["Physical Inventory"], mode="markers", name="Scenario Stockout", marker=dict(color="darkred", size=10, symbol="circle")))
+    fig_phys.add_trace(go.Scatter(x=stockouts_scen["Date"], y=stockouts_scen["Physical Inventory"], mode="markers", name="Scenario Zero Balance", marker=dict(color="darkred", size=10, symbol="circle")))
 
 fig_phys.update_layout(xaxis_title="Date", yaxis_title="Units", hovermode="x unified")
 fig_phys.update_yaxes(rangemode="tozero")
 st.plotly_chart(fig_phys, use_container_width=True)
 
+
 st.subheader("Net Inventory (Physical - Pending Orders)")
 fig_net = go.Figure()
 fig_net.add_trace(go.Scatter(x=df_base["Date"], y=df_base["Net Inventory (Phys - Pending)"], name="Base Net Inventory", line=dict(color='royalblue', width=2)))
+
+lost_sales_base = df_base[df_base["Lost Sales"] > 0]
+fig_net.add_trace(go.Scatter(
+    x=lost_sales_base["Date"], 
+    y=lost_sales_base["Net Inventory (Phys - Pending)"], 
+    mode="markers", 
+    name="Base Lost Sales", 
+    marker=dict(color="red", size=10, symbol="x")
+))
+
 if enable_scenario:
     fig_net.add_trace(go.Scatter(x=df_scen["Date"], y=df_scen["Net Inventory (Phys - Pending)"], name="Scenario Net Inventory", line=dict(color='darkorange', width=2)))
+    
+    lost_sales_scen = df_scen[df_scen["Lost Sales"] > 0]
+    fig_net.add_trace(go.Scatter(
+        x=lost_sales_scen["Date"], 
+        y=lost_sales_scen["Net Inventory (Phys - Pending)"], 
+        mode="markers", 
+        name="Scenario Lost Sales", 
+        marker=dict(color="darkred", size=10, symbol="x")
+    ))
+
 fig_net.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Zero Net Inventory")
 
 fig_net.update_layout(xaxis_title="Date", yaxis_title="Units", hovermode="x unified")
 st.plotly_chart(fig_net, use_container_width=True)
+
 
 st.subheader("Inventory Position (Net + Pipeline Orders)")
 fig_pos = go.Figure()
@@ -506,7 +549,7 @@ fig_demand.update_layout(xaxis_title="Date", yaxis_title="Demand Quantity")
 st.plotly_chart(fig_demand, use_container_width=True)
 
 # ------------------------------------------------
-# Data Tables (Both Cases)
+# Data Tables
 # ------------------------------------------------
 st.subheader("Simulation Data")
 
@@ -518,3 +561,14 @@ if enable_scenario:
         st.dataframe(df_scen, use_container_width=True)
 else:
     st.dataframe(df_base, use_container_width=True)
+
+st.subheader("Pending Orders Aging Profile")
+
+if enable_scenario:
+    tab_aging1, tab_aging2 = st.tabs(["Base Case Aging", "Scenario Aging"])
+    with tab_aging1:
+        st.dataframe(df_aging_base, use_container_width=True)
+    with tab_aging2:
+        st.dataframe(df_aging_scen, use_container_width=True)
+else:
+    st.dataframe(df_aging_base, use_container_width=True)

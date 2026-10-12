@@ -101,7 +101,6 @@ with col2:
             scen_allow_backorders = sb_col_a.checkbox("Allow Backorders", value=True, key="scen_bo")
             scen_max_wait = sb_col_b.number_input("Max Wait Time (Days)", value=5, min_value=1, disabled=not scen_allow_backorders, key="scen_mw")
     else:
-        # Map scenario inputs directly to base case inputs if checkbox is unchecked
         scen_opening_balance = base_opening_balance
         scen_avg_demand = base_avg_demand
         scen_cov = base_cov
@@ -131,8 +130,8 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     backorder_queue = [] 
     data = []
     
-    total_unmet_demand_incidents = 0 
     total_lost_sales = 0
+    fulfillment_wait_counts = {0: 0}
     total_demand_volume = sum(demand_seq)
     
     for day in range(num_days):
@@ -142,6 +141,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
         current_pool = physical_inventory + shipment_received
         opening_physical = physical_inventory
         
+        # Expire backorders past max wait
         active_backorders = []
         for created_day, b_qty in backorder_queue:
             if (day - created_day) > max_wait:
@@ -150,27 +150,37 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
                 active_backorders.append([created_day, b_qty])
         backorder_queue = active_backorders
         
+        # Fulfill backorders
         for i in range(len(backorder_queue)):
             if current_pool <= 0:
                 break
             b_qty = backorder_queue[i][1]
+            created_day = backorder_queue[i][0]
+            wait_time = day - created_day
+            
+            if wait_time not in fulfillment_wait_counts:
+                fulfillment_wait_counts[wait_time] = 0
+                
             if current_pool >= b_qty:
+                fulfillment_wait_counts[wait_time] += b_qty
                 current_pool -= b_qty
                 backorder_queue[i][1] = 0
             else:
+                fulfillment_wait_counts[wait_time] += current_pool
                 backorder_queue[i][1] -= current_pool
                 current_pool = 0
                 
         backorder_queue = [b for b in backorder_queue if b[1] > 0]
         
+        # Fulfill today's demand
         demand_today = demand_seq[day]
-        unmet_today = 0
         if current_pool >= demand_today:
+            fulfillment_wait_counts[0] += demand_today
             physical_inventory = current_pool - demand_today
         else:
+            fulfillment_wait_counts[0] += current_pool
             unmet_today = demand_today - current_pool
             physical_inventory = 0
-            total_unmet_demand_incidents += unmet_today
             
             if allow_bo:
                 backorder_queue.append([day, unmet_today])
@@ -259,10 +269,15 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     kpis = {}
     kpis["stockout_days"] = (df["Physical Inventory"] == 0).sum()
     
+    total_fulfilled = sum(fulfillment_wait_counts.values())
     if total_demand_volume > 0:
-        kpis["fill_rate"] = ((total_demand_volume - total_unmet_demand_incidents) / total_demand_volume) * 100
+        kpis["fill_rate"] = (total_fulfilled / total_demand_volume) * 100
     else:
         kpis["fill_rate"] = 100.0
+        
+    kpis["fulfillment_matrix"] = fulfillment_wait_counts
+    kpis["lost_sales"] = total_lost_sales
+    kpis["pending_at_end"] = sum(b[1] for b in backorder_queue)
         
     kpis["average_inventory"] = df["Physical Inventory"].mean()
     kpis["average_age_inventory"] = kpis["average_inventory"] / df["Demand"].mean() if df["Demand"].mean() > 0 else 0
@@ -316,7 +331,7 @@ def calc_delta(base, scen):
 st.subheader("Inventory KPIs")
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Stockout Days", kpis_scen["stockout_days"], calc_delta(kpis_base["stockout_days"], kpis_scen["stockout_days"]), delta_color="inverse")
-c2.metric("First-Pass Fill Rate", f"{kpis_scen['fill_rate']:.1f}%", calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"]))
+c2.metric("Fill Rate (%)", f"{kpis_scen['fill_rate']:.1f}%", calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"]))
 c3.metric("Avg Age of Inv", round(kpis_scen["average_age_inventory"], 1), calc_delta(kpis_base["average_age_inventory"], kpis_scen["average_age_inventory"]), delta_color="inverse")
 c4.metric("Avg Physical Inv", round(kpis_scen["average_inventory"], 0), calc_delta(kpis_base["average_inventory"], kpis_scen["average_inventory"]), delta_color="inverse")
 c5.metric("Avg Working Capital", round(kpis_scen["average_working_capital"], 0), calc_delta(kpis_base["average_working_capital"], kpis_scen["average_working_capital"]), delta_color="inverse")
@@ -347,6 +362,65 @@ with st.expander("EOQ (Economic Order Quantity) Analysis", expanded=False):
     k1.metric("Cost with Current Policy", round(kpis_scen["cost_current"], 0), calc_delta(kpis_base["cost_current"], kpis_scen["cost_current"]), delta_color="inverse")
     k2.metric("Cost with EOQ", round(kpis_scen["cost_eoq"], 0), calc_delta(kpis_base["cost_eoq"], kpis_scen["cost_eoq"]), delta_color="inverse")
     k3.metric("Savings Using EOQ", round(kpis_scen["savings_eoq"], 0), calc_delta(kpis_base["savings_eoq"], kpis_scen["savings_eoq"]))
+
+st.divider()
+
+# ------------------------------------------------
+# Order Fulfillment Matrix
+# ------------------------------------------------
+st.subheader("Order Fulfillment Matrix")
+
+max_wait_matrix = max(base_max_wait if base_allow_backorders else 0, 
+                      scen_max_wait if scen_allow_backorders else 0)
+
+matrix_data = []
+base_total_demand = sum(kpis_base["fulfillment_matrix"].values()) + kpis_base["lost_sales"] + kpis_base["pending_at_end"]
+scen_total_demand = sum(kpis_scen["fulfillment_matrix"].values()) + kpis_scen["lost_sales"] + kpis_scen["pending_at_end"]
+
+for w in range(int(max_wait_matrix) + 1):
+    b_val = kpis_base["fulfillment_matrix"].get(w, 0)
+    s_val = kpis_scen["fulfillment_matrix"].get(w, 0)
+    
+    b_pct = (b_val / base_total_demand * 100) if base_total_demand > 0 else 0
+    s_pct = (s_val / scen_total_demand * 100) if scen_total_demand > 0 else 0
+    
+    label = f"Fulfilled in {w} Days" if w > 0 else "Fulfilled Immediately (0 Days)"
+    row_data = {
+        "Fulfillment Status": label,
+        "Base Case (Units)": b_val,
+        "Base Case (%)": f"{b_pct:.1f}%"
+    }
+    if enable_scenario:
+        row_data["Scenario (Units)"] = s_val
+        row_data["Scenario (%)"] = f"{s_pct:.1f}%"
+    matrix_data.append(row_data)
+
+b_lost = kpis_base["lost_sales"]
+s_lost = kpis_scen["lost_sales"]
+lost_row = {
+    "Fulfillment Status": "Lost Sales (Exceeded Wait / No BO)",
+    "Base Case (Units)": b_lost,
+    "Base Case (%)": f"{(b_lost / base_total_demand * 100) if base_total_demand > 0 else 0:.1f}%"
+}
+if enable_scenario:
+    lost_row["Scenario (Units)"] = s_lost
+    lost_row["Scenario (%)"] = f"{(s_lost / scen_total_demand * 100) if scen_total_demand > 0 else 0:.1f}%"
+matrix_data.append(lost_row)
+
+b_pend = kpis_base["pending_at_end"]
+s_pend = kpis_scen["pending_at_end"]
+pend_row = {
+    "Fulfillment Status": "Pending in Queue at Sim End",
+    "Base Case (Units)": b_pend,
+    "Base Case (%)": f"{(b_pend / base_total_demand * 100) if base_total_demand > 0 else 0:.1f}%"
+}
+if enable_scenario:
+    pend_row["Scenario (Units)"] = s_pend
+    pend_row["Scenario (%)"] = f"{(s_pend / scen_total_demand * 100) if scen_total_demand > 0 else 0:.1f}%"
+matrix_data.append(pend_row)
+
+df_matrix = pd.DataFrame(matrix_data)
+st.dataframe(df_matrix, use_container_width=True, hide_index=True)
 
 st.divider()
 

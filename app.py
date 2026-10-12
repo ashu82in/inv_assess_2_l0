@@ -284,8 +284,13 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     
     df["Blocked Working Capital"] = df["Physical Inventory"] * uv
     kpis["average_working_capital"] = df["Blocked Working Capital"].mean()
+    
     kpis["min_inventory"] = df["Physical Inventory"].min()
     kpis["max_inventory"] = df["Physical Inventory"].max()
+    kpis["min_net_inv"] = df["Net Inventory (Phys - Pending)"].min()
+    kpis["max_net_inv"] = df["Net Inventory (Phys - Pending)"].max()
+    kpis["min_inv_pos"] = df["Inventory Position (Net + Pipeline)"].min()
+    kpis["max_inv_pos"] = df["Inventory Position (Net + Pipeline)"].max()
     kpis["min_wc"] = df["Blocked Working Capital"].min()
     kpis["max_wc"] = df["Blocked Working Capital"].max()
     
@@ -338,10 +343,16 @@ c5.metric("Avg Working Capital", round(kpis_scen["average_working_capital"], 0),
 
 st.subheader("Inventory Range")
 r1, r2, r3, r4 = st.columns(4)
-r1.metric("Minimum Physical Inv", round(kpis_scen["min_inventory"], 0), calc_delta(kpis_base["min_inventory"], kpis_scen["min_inventory"]))
-r2.metric("Maximum Physical Inv", round(kpis_scen["max_inventory"], 0), calc_delta(kpis_base["max_inventory"], kpis_scen["max_inventory"]))
-r3.metric("Minimum Working Capital", round(kpis_scen["min_wc"], 0), calc_delta(kpis_base["min_wc"], kpis_scen["min_wc"]))
-r4.metric("Maximum Working Capital", round(kpis_scen["max_wc"], 0), calc_delta(kpis_base["max_wc"], kpis_scen["max_wc"]))
+r1.metric("Min Physical Inv", round(kpis_scen["min_inventory"], 0), calc_delta(kpis_base["min_inventory"], kpis_scen["min_inventory"]))
+r2.metric("Max Physical Inv", round(kpis_scen["max_inventory"], 0), calc_delta(kpis_base["max_inventory"], kpis_scen["max_inventory"]))
+r3.metric("Min Net Inventory", round(kpis_scen["min_net_inv"], 0), calc_delta(kpis_base["min_net_inv"], kpis_scen["min_net_inv"]))
+r4.metric("Max Net Inventory", round(kpis_scen["max_net_inv"], 0), calc_delta(kpis_base["max_net_inv"], kpis_scen["max_net_inv"]))
+
+r5, r6, r7, r8 = st.columns(4)
+r5.metric("Min Inv Position", round(kpis_scen["min_inv_pos"], 0), calc_delta(kpis_base["min_inv_pos"], kpis_scen["min_inv_pos"]))
+r6.metric("Max Inv Position", round(kpis_scen["max_inv_pos"], 0), calc_delta(kpis_base["max_inv_pos"], kpis_scen["max_inv_pos"]))
+r7.metric("Minimum Working Capital", round(kpis_scen["min_wc"], 0), calc_delta(kpis_base["min_wc"], kpis_scen["min_wc"]))
+r8.metric("Maximum Working Capital", round(kpis_scen["max_wc"], 0), calc_delta(kpis_base["max_wc"], kpis_scen["max_wc"]))
 
 st.subheader("Inventory Cost Metrics")
 cc1, cc2, cc3 = st.columns(3)

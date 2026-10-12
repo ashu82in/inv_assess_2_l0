@@ -267,7 +267,7 @@ def run_simulation(demand_seq, op_bal, avg_dem, lt, rop, oq, uv, hc_rate, oc, al
     cost_eoq_policy = sim_cost(int(eoq))
 
     kpis = {}
-    kpis["stockout_days"] = (df["Physical Inventory"] == 0).sum()
+    kpis["zero_balance_days"] = (df["Physical Inventory"] == 0).sum()
     
     total_fulfilled = sum(fulfillment_wait_counts.values())
     if total_demand_volume > 0:
@@ -330,7 +330,7 @@ def calc_delta(base, scen):
 # ------------------------------------------------
 st.subheader("Inventory KPIs")
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Stockout Days", kpis_scen["stockout_days"], calc_delta(kpis_base["stockout_days"], kpis_scen["stockout_days"]), delta_color="inverse")
+c1.metric("Zero Balance Days", kpis_scen["zero_balance_days"], calc_delta(kpis_base["zero_balance_days"], kpis_scen["zero_balance_days"]), delta_color="inverse")
 c2.metric("Fill Rate (%)", f"{kpis_scen['fill_rate']:.1f}%", calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"]))
 c3.metric("Avg Age of Inv", round(kpis_scen["average_age_inventory"], 1), calc_delta(kpis_base["average_age_inventory"], kpis_scen["average_age_inventory"]), delta_color="inverse")
 c4.metric("Avg Physical Inv", round(kpis_scen["average_inventory"], 0), calc_delta(kpis_base["average_inventory"], kpis_scen["average_inventory"]), delta_color="inverse")

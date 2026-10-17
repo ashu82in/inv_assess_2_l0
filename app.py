@@ -100,36 +100,73 @@ col1, col2 = st.columns([1, 1])
 with col2:
   with st.expander("Scenario Inputs (Right Hand Side)", expanded=True):
     st.markdown("### Scenario Configuration")
+
+    # Toggle Checkbox to link/unlink with Base Case
+    use_base_inputs = st.checkbox(
+        "Match Base Case Inputs", value=False, key="use_base_inputs"
+    )
+
     s_col_a, s_col_b = st.columns(2)
+
     scen_opening_balance = s_col_a.number_input(
-        "Opening Balance", value=500, key="scen_ob"
+        "Opening Balance",
+        value=base_opening_balance if use_base_inputs else 500,
+        disabled=use_base_inputs,
+        key="scen_ob",
     )
     scen_avg_demand = s_col_b.number_input(
-        "Average Demand", value=25, key="scen_ad"
+        "Average Demand",
+        value=base_avg_demand if use_base_inputs else 25,
+        disabled=use_base_inputs,
+        key="scen_ad",
     )
     scen_cov = s_col_a.number_input(
-        "Coefficient of Variation", value=0.8, key="scen_cov"
+        "Coefficient of Variation",
+        value=base_cov if use_base_inputs else 0.8,
+        disabled=use_base_inputs,
+        key="scen_cov",
     )
     scen_lead_time = s_col_b.number_input(
-        "Lead Time (Days)", value=3, key="scen_lt"
+        "Lead Time (Days)",
+        value=base_lead_time if use_base_inputs else 3,
+        disabled=use_base_inputs,
+        key="scen_lt",
     )
     scen_reorder_point = s_col_a.number_input(
-        "Reorder Point", value=350, key="scen_rop"
+        "Reorder Point",
+        value=base_reorder_point if use_base_inputs else 350,
+        disabled=use_base_inputs,
+        key="scen_rop",
     )
     scen_order_qty = s_col_b.number_input(
-        "Order Quantity", value=300, key="scen_oq"
+        "Order Quantity",
+        value=base_order_qty if use_base_inputs else 300,
+        disabled=use_base_inputs,
+        key="scen_oq",
     )
     scen_unit_value = s_col_a.number_input(
-        "Value Per Unit", value=100, key="scen_uv"
+        "Value Per Unit",
+        value=base_unit_value if use_base_inputs else 100,
+        disabled=use_base_inputs,
+        key="scen_uv",
     )
     scen_holding_cost_percent = s_col_b.number_input(
-        "Holding Cost (% of Value)", value=20.0, key="scen_hc"
+        "Holding Cost (% of Value)",
+        value=base_holding_cost_percent if use_base_inputs else 20.0,
+        disabled=use_base_inputs,
+        key="scen_hc",
     )
     scen_ordering_cost = s_col_a.number_input(
-        "Ordering Cost Per Order", value=500, key="scen_oc"
+        "Ordering Cost Per Order",
+        value=base_ordering_cost if use_base_inputs else 500,
+        disabled=use_base_inputs,
+        key="scen_oc",
     )
     scen_allow_backorders = s_col_a.checkbox(
-        "Allow Backorders", value=False, key="scen_bo"
+        "Allow Backorders",
+        value=base_allow_backorders if use_base_inputs else False,
+        disabled=use_base_inputs,
+        key="scen_bo",
     )
 
 scen_holding_cost_rate = scen_holding_cost_percent / 100

@@ -98,89 +98,81 @@ dates = pd.date_range(start="2024-01-01", periods=num_days)
 col1, col2 = st.columns([1, 1])
 
 with col2:
-  with st.expander("Scenario Inputs (Right Hand Side)", expanded=True):
+  # Checkbox at top of the expander box to enable/disable scenario
+  enable_scenario = st.checkbox(
+      "Enable Scenario Comparison", value=True, key="enable_scenario"
+  )
+
+  with st.expander(
+      "Scenario Inputs (Right Hand Side)", expanded=enable_scenario
+  ):
     st.markdown("### Scenario Configuration")
 
-    # Toggle Checkbox to link/unlink with Base Case
-    use_base_inputs = st.checkbox(
-        "Match Base Case Inputs", value=False, key="use_base_inputs"
-    )
+    if enable_scenario:
+      use_base_inputs = st.checkbox(
+          "Match Base Case Inputs", value=False, key="use_base_inputs"
+      )
 
-    s_col_a, s_col_b = st.columns(2)
+      if use_base_inputs:
+        st.session_state.scen_ob = base_opening_balance
+        st.session_state.scen_ad = base_avg_demand
+        st.session_state.scen_cov = base_cov
+        st.session_state.scen_lt = base_lead_time
+        st.session_state.scen_rop = base_reorder_point
+        st.session_state.scen_oq = base_order_qty
+        st.session_state.scen_uv = base_unit_value
+        st.session_state.scen_hc = base_holding_cost_percent
+        st.session_state.scen_oc = base_ordering_cost
+        st.session_state.scen_bo = base_allow_backorders
 
-    scen_opening_balance = s_col_a.number_input(
-        "Opening Balance",
-        value=base_opening_balance if use_base_inputs else 500,
-        disabled=use_base_inputs,
-        key="scen_ob",
-    )
-    scen_avg_demand = s_col_b.number_input(
-        "Average Demand",
-        value=base_avg_demand if use_base_inputs else 25,
-        disabled=use_base_inputs,
-        key="scen_ad",
-    )
-    scen_cov = s_col_a.number_input(
-        "Coefficient of Variation",
-        value=base_cov if use_base_inputs else 0.8,
-        disabled=use_base_inputs,
-        key="scen_cov",
-    )
-    scen_lead_time = s_col_b.number_input(
-        "Lead Time (Days)",
-        value=base_lead_time if use_base_inputs else 3,
-        disabled=use_base_inputs,
-        key="scen_lt",
-    )
-    scen_reorder_point = s_col_a.number_input(
-        "Reorder Point",
-        value=base_reorder_point if use_base_inputs else 350,
-        disabled=use_base_inputs,
-        key="scen_rop",
-    )
-    scen_order_qty = s_col_b.number_input(
-        "Order Quantity",
-        value=base_order_qty if use_base_inputs else 300,
-        disabled=use_base_inputs,
-        key="scen_oq",
-    )
-    scen_unit_value = s_col_a.number_input(
-        "Value Per Unit",
-        value=base_unit_value if use_base_inputs else 100,
-        disabled=use_base_inputs,
-        key="scen_uv",
-    )
-    scen_holding_cost_percent = s_col_b.number_input(
-        "Holding Cost (% of Value)",
-        value=base_holding_cost_percent if use_base_inputs else 20.0,
-        disabled=use_base_inputs,
-        key="scen_hc",
-    )
-    scen_ordering_cost = s_col_a.number_input(
-        "Ordering Cost Per Order",
-        value=base_ordering_cost if use_base_inputs else 500,
-        disabled=use_base_inputs,
-        key="scen_oc",
-    )
-    scen_allow_backorders = s_col_a.checkbox(
-        "Allow Backorders",
-        value=base_allow_backorders if use_base_inputs else False,
-        disabled=use_base_inputs,
-        key="scen_bo",
-    )
+      s_col_a, s_col_b = st.columns(2)
+      scen_opening_balance = s_col_a.number_input(
+          "Opening Balance", disabled=use_base_inputs, key="scen_ob"
+      )
+      scen_avg_demand = s_col_b.number_input(
+          "Average Demand", disabled=use_base_inputs, key="scen_ad"
+      )
+      scen_cov = s_col_a.number_input(
+          "Coefficient of Variation", disabled=use_base_inputs, key="scen_cov"
+      )
+      scen_lead_time = s_col_b.number_input(
+          "Lead Time (Days)", disabled=use_base_inputs, key="scen_lt"
+      )
+      scen_reorder_point = s_col_a.number_input(
+          "Reorder Point", disabled=use_base_inputs, key="scen_rop"
+      )
+      scen_order_qty = s_col_b.number_input(
+          "Order Quantity", disabled=use_base_inputs, key="scen_oq"
+      )
+      scen_unit_value = s_col_a.number_input(
+          "Value Per Unit", disabled=use_base_inputs, key="scen_uv"
+      )
+      scen_holding_cost_percent = s_col_b.number_input(
+          "Holding Cost (% of Value)", disabled=use_base_inputs, key="scen_hc"
+      )
+      scen_ordering_cost = s_col_a.number_input(
+          "Ordering Cost Per Order", disabled=use_base_inputs, key="scen_oc"
+      )
+      scen_allow_backorders = s_col_a.checkbox(
+          "Allow Backorders", disabled=use_base_inputs, key="scen_bo"
+      )
 
-scen_holding_cost_rate = scen_holding_cost_percent / 100
+      scen_holding_cost_rate = scen_holding_cost_percent / 100
 
-if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
-  scen_demand = base_demand
-else:
-  np.random.seed(99)
-  scen_demand = np.maximum(
-      0,
-      np.random.normal(
-          scen_avg_demand, scen_avg_demand * scen_cov, num_days
-      ),
-  ).round()
+      if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
+        scen_demand = base_demand
+      else:
+        np.random.seed(99)
+        scen_demand = np.maximum(
+            0,
+            np.random.normal(
+                scen_avg_demand, scen_avg_demand * scen_cov, num_days
+            ),
+        ).round()
+    else:
+      st.info(
+          "Scenario analysis is disabled. Check the box above to enable scenario inputs."
+      )
 
 
 # ------------------------------------------------
@@ -272,7 +264,6 @@ def run_simulation(
       ],
   )
 
-  # Cost Comparison Logic (EOQ inner sim)
   def sim_cost(test_oq):
     inv = op_bal
     pl_orders = []
@@ -292,7 +283,6 @@ def run_simulation(
           inv = 0
       pl_qty = sum(q for arr, q in pl_orders)
 
-      # Holding cost only applies to positive inventory
       on_hand_inv = max(0, inv)
       clos_pipe = on_hand_inv + pl_qty
       hc_total += (clos_pipe * uv) * hc_rate / 365
@@ -318,7 +308,6 @@ def run_simulation(
   kpis = {}
   kpis["stockout_days"] = (df["Closing Balance"] <= 0).sum()
 
-  # Calculate Fill Rate
   if total_demand_volume > 0:
     kpis["fill_rate"] = (
         (total_demand_volume - total_unmet_demand) / total_demand_volume
@@ -376,21 +365,26 @@ df_base, kpis_base = run_simulation(
     base_allow_backorders,
 )
 
-df_scen, kpis_scen = run_simulation(
-    scen_demand,
-    scen_opening_balance,
-    scen_avg_demand,
-    scen_lead_time,
-    scen_reorder_point,
-    scen_order_qty,
-    scen_unit_value,
-    scen_holding_cost_rate,
-    scen_ordering_cost,
-    scen_allow_backorders,
-)
+if enable_scenario:
+  df_scen, kpis_scen = run_simulation(
+      scen_demand,
+      scen_opening_balance,
+      scen_avg_demand,
+      scen_lead_time,
+      scen_reorder_point,
+      scen_order_qty,
+      scen_unit_value,
+      scen_holding_cost_rate,
+      scen_ordering_cost,
+      scen_allow_backorders,
+  )
+else:
+  df_scen, kpis_scen = df_base, kpis_base
 
 
 def calc_delta(base, scen):
+  if not enable_scenario:
+    return None
   if base == 0:
     return f"{scen - base:,.0f} (N/A)"
   diff = scen - base
@@ -399,7 +393,7 @@ def calc_delta(base, scen):
 
 
 # ------------------------------------------------
-# KPI Displays (Comparing Scenario to Base)
+# KPI Displays
 # ------------------------------------------------
 st.subheader("Inventory KPIs")
 c1, c2, c3, c4, c5 = st.columns(5)
@@ -540,14 +534,6 @@ fig.add_trace(
         line=dict(color="royalblue", width=2),
     )
 )
-fig.add_trace(
-    go.Scatter(
-        x=df_scen["Date"],
-        y=df_scen["Closing Balance"],
-        name="Scenario Closing Inventory",
-        line=dict(color="darkorange", width=2),
-    )
-)
 
 fig.add_hline(
     y=base_reorder_point,
@@ -555,15 +541,7 @@ fig.add_hline(
     line_color="royalblue",
     annotation_text="Base Reorder Point",
 )
-if base_reorder_point != scen_reorder_point:
-  fig.add_hline(
-      y=scen_reorder_point,
-      line_dash="dash",
-      line_color="darkorange",
-      annotation_text="Scenario Reorder Point",
-  )
 
-# Add Stockout Widgets (Markers)
 stockouts_base = df_base[df_base["Closing Balance"] <= 0]
 fig.add_trace(
     go.Scatter(
@@ -575,24 +553,40 @@ fig.add_trace(
     )
 )
 
-stockouts_scen = df_scen[df_scen["Closing Balance"] <= 0]
-fig.add_trace(
-    go.Scatter(
-        x=stockouts_scen["Date"],
-        y=stockouts_scen["Closing Balance"],
-        mode="markers",
-        name="Scenario Stockout",
-        marker=dict(color="darkred", size=10, symbol="circle"),
+if enable_scenario:
+  fig.add_trace(
+      go.Scatter(
+          x=df_scen["Date"],
+          y=df_scen["Closing Balance"],
+          name="Scenario Closing Inventory",
+          line=dict(color="darkorange", width=2),
+      )
+  )
+
+  if base_reorder_point != scen_reorder_point:
+    fig.add_hline(
+        y=scen_reorder_point,
+        line_dash="dash",
+        line_color="darkorange",
+        annotation_text="Scenario Reorder Point",
     )
-)
+
+  stockouts_scen = df_scen[df_scen["Closing Balance"] <= 0]
+  fig.add_trace(
+      go.Scatter(
+          x=stockouts_scen["Date"],
+          y=stockouts_scen["Closing Balance"],
+          mode="markers",
+          name="Scenario Stockout",
+          marker=dict(color="darkred", size=10, symbol="circle"),
+      )
+  )
 
 fig.update_layout(
     xaxis_title="Date",
     yaxis_title="Inventory Units",
     hovermode="x unified",
-    yaxis=dict(
-        rangemode="tozero"
-    ),  # Forces the y-axis to start from 0 (or lower if backorders exist)
+    yaxis=dict(rangemode="tozero"),
 )
 st.plotly_chart(fig, use_container_width=True)
 
@@ -600,13 +594,13 @@ st.plotly_chart(fig, use_container_width=True)
 # Demand Line Graph with Median
 # ------------------------------------------------
 st.subheader("Demand Trend over Time")
-median_demand = df_scen["Demand"].median()
+median_demand = df_base["Demand"].median()
 
 fig_demand = go.Figure()
 fig_demand.add_trace(
     go.Scatter(
-        x=df_scen["Date"],
-        y=df_scen["Demand"],
+        x=df_base["Date"],
+        y=df_base["Demand"],
         mode="lines",
         name="Daily Demand",
         line=dict(color="mediumseagreen"),
@@ -622,19 +616,20 @@ fig_demand.add_hline(
 fig_demand.update_layout(
     xaxis_title="Date",
     yaxis_title="Demand Quantity",
-    yaxis=dict(rangemode="tozero"),  # Forces the y-axis to start from 0
+    yaxis=dict(rangemode="tozero"),
 )
 st.plotly_chart(fig_demand, use_container_width=True)
 
 # ------------------------------------------------
-# Data Tables (Both Cases)
+# Data Tables
 # ------------------------------------------------
 st.subheader("Simulation Data")
 
-tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
-
-with tab1:
+if enable_scenario:
+  tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
+  with tab1:
+    st.dataframe(df_base, use_container_width=True)
+  with tab2:
+    st.dataframe(df_scen, use_container_width=True)
+else:
   st.dataframe(df_base, use_container_width=True)
-
-with tab2:
-  st.dataframe(df_scen, use_container_width=True)

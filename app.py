@@ -98,7 +98,7 @@ dates = pd.date_range(start="2024-01-01", periods=num_days)
 col1, col2 = st.columns([1, 1])
 
 with col2:
-  # Checkbox at top of the expander box to enable/disable scenario
+  # Checkbox to completely enable/disable scenario simulation
   enable_scenario = st.checkbox(
       "Enable Scenario Comparison", value=True, key="enable_scenario"
   )
@@ -113,6 +113,7 @@ with col2:
           "Match Base Case Inputs", value=False, key="use_base_inputs"
       )
 
+      # Dynamically synchronize session state when Match Base Case is checked
       if use_base_inputs:
         st.session_state.scen_ob = base_opening_balance
         st.session_state.scen_ad = base_avg_demand
@@ -264,6 +265,7 @@ def run_simulation(
       ],
   )
 
+  # Cost Comparison Logic (EOQ inner sim)
   def sim_cost(test_oq):
     inv = op_bal
     pl_orders = []
@@ -586,15 +588,18 @@ fig.update_layout(
     xaxis_title="Date",
     yaxis_title="Inventory Units",
     hovermode="x unified",
-    yaxis=dict(rangemode="tozero"),
+    yaxis=dict(
+        rangemode="tozero"
+    ),  # Forces Y-axis to always include 0 on bottom
 )
 st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------------
-# Demand Line Graph with Median
+# Demand Line Graph with Median & Mean (Average)
 # ------------------------------------------------
 st.subheader("Demand Trend over Time")
 median_demand = df_base["Demand"].median()
+mean_demand = df_base["Demand"].mean()
 
 fig_demand = go.Figure()
 fig_demand.add_trace(
@@ -606,17 +611,31 @@ fig_demand.add_trace(
         line=dict(color="mediumseagreen"),
     )
 )
+
+# Median Reference Line
 fig_demand.add_hline(
     y=median_demand,
     line_dash="dash",
     line_color="orange",
-    annotation_text=f"Median Demand: {median_demand:.0f}",
+    annotation_text=f"Median Demand: {median_demand:.1f}",
     annotation_position="bottom right",
 )
+
+# Average (Mean) Reference Line
+fig_demand.add_hline(
+    y=mean_demand,
+    line_dash="dot",
+    line_color="crimson",
+    annotation_text=f"Average Demand: {mean_demand:.1f}",
+    annotation_position="top right",
+)
+
 fig_demand.update_layout(
     xaxis_title="Date",
     yaxis_title="Demand Quantity",
-    yaxis=dict(rangemode="tozero"),
+    yaxis=dict(
+        rangemode="tozero"
+    ),  # Forces Y-axis to always include 0 on bottom
 )
 st.plotly_chart(fig_demand, use_container_width=True)
 

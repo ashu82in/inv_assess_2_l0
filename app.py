@@ -212,7 +212,7 @@ def run_simulation(
         demand_today = demand_seq[day]
         inventory -= demand_today
 
-        unmet_today = 0  # Track actual lost sales / unmet demand for the day
+        unmet_today = 0
         if inventory < 0:
             if inv_before_demand > 0:
                 unmet_today = abs(inventory)
@@ -248,7 +248,7 @@ def run_simulation(
             inventory_position,
             new_order,
             closing,
-            unmet_today,  # Added Unmet Demand (Stockout Qty) to table row
+            unmet_today,
             closing_with_pipeline,
         ])
 
@@ -311,7 +311,6 @@ def run_simulation(
     cost_eoq_policy = sim_cost(int(eoq))
 
     kpis = {}
-    # Count stockout days strictly when actual sales were lost/unmet
     kpis["stockout_days"] = (df["Unmet Demand"] > 0).sum()
 
     if total_demand_volume > 0:
@@ -527,77 +526,118 @@ with st.expander("EOQ (Economic Order Quantity) Analysis", expanded=False):
 st.divider()
 
 # ------------------------------------------------
+# Helper Function to Build Inventory Behaviour Chart
+# ------------------------------------------------
+def create_inventory_chart(highlight_reorder_zone=False):
+    chart_fig = go.Figure()
+
+    chart_fig.add_trace(
+        go.Scatter(
+            x=df_base["Date"],
+            y=df_base["Closing Balance"],
+            name="Base Closing Inventory",
+            line=dict(color="royalblue", width=2),
+        )
+    )
+
+    chart_fig.add_hline(
+        y=base_reorder_point,
+        line_dash="dash",
+        line_color="royalblue",
+        annotation_text="Base Reorder Point",
+    )
+
+    stockouts_base = df_base[df_base["Unmet Demand"] > 0]
+    chart_fig.add_trace(
+        go.Scatter(
+            x=stockouts_base["Date"],
+            y=stockouts_base["Closing Balance"],
+            mode="markers",
+            name="Base Stockout",
+            marker=dict(color="red", size=9, symbol="circle"),
+        )
+    )
+
+    if enable_scenario:
+        chart_fig.add_trace(
+            go.Scatter(
+                x=df_scen["Date"],
+                y=df_scen["Closing Balance"],
+                name="Scenario Closing Inventory",
+                line=dict(color="darkorange", width=2),
+            )
+        )
+
+        if base_reorder_point != scen_reorder_point:
+            chart_fig.add_hline(
+                y=scen_reorder_point,
+                line_dash="dash",
+                line_color="darkorange",
+                annotation_text="Scenario Reorder Point",
+            )
+
+        stockouts_scen = df_scen[df_scen["Unmet Demand"] > 0]
+        chart_fig.add_trace(
+            go.Scatter(
+                x=stockouts_scen["Date"],
+                y=stockouts_scen["Closing Balance"],
+                mode="markers",
+                name="Scenario Stockout",
+                marker=dict(color="darkred", size=10, symbol="circle"),
+            )
+        )
+
+    # Highlight consecutive days spent in the reorder zone with transparent red
+    if highlight_reorder_zone:
+        active_df = df_scen if enable_scenario else df_base
+        active_rop = scen_reorder_point if enable_scenario else base_reorder_point
+
+        in_zone = active_df["Closing Balance"] <= active_rop
+        zone_groups = (in_zone != in_zone.shift()).cumsum()
+
+        for _, group in active_df[in_zone].groupby(zone_groups):
+            x0 = group["Date"].iloc[0] - pd.Timedelta(hours=12)
+            x1 = group["Date"].iloc[-1] + pd.Timedelta(hours=12)
+            chart_fig.add_vrect(
+                x0=x0,
+                x1=x1,
+                fillcolor="rgba(255, 0, 0, 0.15)",
+                layer="below",
+                line_width=0,
+            )
+
+        # Dummy scatter trace to display the reorder zone shading in the legend
+        chart_fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                marker=dict(
+                    size=12,
+                    color="rgba(255, 0, 0, 0.15)",
+                    symbol="square",
+                    line=dict(color="rgba(255, 0, 0, 0.4)", width=1),
+                ),
+                name="Reorder Zone Days",
+            )
+        )
+
+    chart_fig.update_layout(
+        xaxis_title="Date",
+        yaxis_title="Inventory Units",
+        hovermode="x unified",
+        yaxis=dict(
+            rangemode="tozero"
+        ),  # Forces Y-axis to always include 0 on bottom
+    )
+    return chart_fig
+
+
+# ------------------------------------------------
 # Inventory Behaviour Chart (Both Cases)
 # ------------------------------------------------
 st.subheader("Inventory Behaviour: Base vs Scenario")
-fig = go.Figure()
-
-fig.add_trace(
-    go.Scatter(
-        x=df_base["Date"],
-        y=df_base["Closing Balance"],
-        name="Base Closing Inventory",
-        line=dict(color="royalblue", width=2),
-    )
-)
-
-fig.add_hline(
-    y=base_reorder_point,
-    line_dash="dash",
-    line_color="royalblue",
-    annotation_text="Base Reorder Point",
-)
-
-# Mark stockout only when actual sales were lost/unmet (Unmet Demand > 0)
-stockouts_base = df_base[df_base["Unmet Demand"] > 0]
-fig.add_trace(
-    go.Scatter(
-        x=stockouts_base["Date"],
-        y=stockouts_base["Closing Balance"],
-        mode="markers",
-        name="Base Stockout",
-        marker=dict(color="red", size=9, symbol="circle"),
-    )
-)
-
-if enable_scenario:
-    fig.add_trace(
-        go.Scatter(
-            x=df_scen["Date"],
-            y=df_scen["Closing Balance"],
-            name="Scenario Closing Inventory",
-            line=dict(color="darkorange", width=2),
-        )
-    )
-
-    if base_reorder_point != scen_reorder_point:
-        fig.add_hline(
-            y=scen_reorder_point,
-            line_dash="dash",
-            line_color="darkorange",
-            annotation_text="Scenario Reorder Point",
-        )
-
-    # Mark stockout only when actual sales were lost/unmet (Unmet Demand > 0)
-    stockouts_scen = df_scen[df_scen["Unmet Demand"] > 0]
-    fig.add_trace(
-        go.Scatter(
-            x=stockouts_scen["Date"],
-            y=stockouts_scen["Closing Balance"],
-            mode="markers",
-            name="Scenario Stockout",
-            marker=dict(color="darkred", size=10, symbol="circle"),
-        )
-    )
-
-fig.update_layout(
-    xaxis_title="Date",
-    yaxis_title="Inventory Units",
-    hovermode="x unified",
-    yaxis=dict(
-        rangemode="tozero"
-    ),  # Forces Y-axis to always include 0 on bottom
-)
+fig = create_inventory_chart(highlight_reorder_zone=False)
 st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------------
@@ -658,3 +698,12 @@ if enable_scenario:
         st.dataframe(df_scen, use_container_width=True)
 else:
     st.dataframe(df_base, use_container_width=True)
+
+st.divider()
+
+# ------------------------------------------------
+# Inventory Behaviour Chart with Reorder Zone Highlighted
+# ------------------------------------------------
+st.subheader("Inventory Behaviour: Reorder Zone Highlighted")
+fig_reorder = create_inventory_chart(highlight_reorder_zone=True)
+st.plotly_chart(fig_reorder, use_container_width=True)

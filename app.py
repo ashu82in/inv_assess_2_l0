@@ -230,7 +230,8 @@ def run_simulation(
         )
 
         new_order = 0
-        if inventory_position < rop:
+        # Trigger order when inventory position is equal to or less than ROP
+        if inventory_position <= rop:
             new_order = oq
             pipeline_orders.append((day + lt, oq))
 
@@ -293,7 +294,8 @@ def run_simulation(
             hc_total += (clos_pipe * uv) * hc_rate / 365
 
             inv_pos = inv + pl_qty
-            if inv_pos < rop:
+            # Trigger order when inventory position is equal to or less than ROP
+            if inv_pos <= rop:
                 pl_orders.append((d + lt, test_oq))
                 orders_count += 1
 
@@ -533,6 +535,48 @@ st.divider()
 def create_inventory_chart(highlight_reorder_zone=False):
     chart_fig = go.Figure()
 
+    # Highlight consecutive days spent in the reorder zone using a toggleable trace
+    if highlight_reorder_zone:
+        active_df = df_scen if enable_scenario else df_base
+        active_rop = scen_reorder_point if enable_scenario else base_reorder_point
+
+        y_min = min(
+            0,
+            df_base["Closing Balance"].min(),
+            df_scen["Closing Balance"].min() if enable_scenario else 0,
+        )
+        y_max = max(
+            df_base["Closing Balance"].max(),
+            df_scen["Closing Balance"].max() if enable_scenario else 0,
+            base_reorder_point,
+            scen_reorder_point if enable_scenario else 0,
+        )
+        y_top = y_max * 1.05 if y_max > 0 else 10
+
+        in_zone = active_df["Closing Balance"] <= active_rop
+        zone_groups = (in_zone != in_zone.shift()).cumsum()
+
+        poly_x = []
+        poly_y = []
+        for _, group in active_df[in_zone].groupby(zone_groups):
+            x0 = group["Date"].iloc[0] - pd.Timedelta(hours=12)
+            x1 = group["Date"].iloc[-1] + pd.Timedelta(hours=12)
+            poly_x.extend([x0, x1, x1, x0, x0, None])
+            poly_y.extend([y_min, y_min, y_top, y_top, y_min, None])
+
+        chart_fig.add_trace(
+            go.Scatter(
+                x=poly_x,
+                y=poly_y,
+                fill="toself",
+                fillcolor="rgba(255, 0, 0, 0.15)",
+                line=dict(width=0),
+                mode="lines",
+                name="Reorder Zone Days",
+                hoverinfo="skip",
+            )
+        )
+
     chart_fig.add_trace(
         go.Scatter(
             x=df_base["Date"],
@@ -586,41 +630,6 @@ def create_inventory_chart(highlight_reorder_zone=False):
                 mode="markers",
                 name="Scenario Stockout",
                 marker=dict(color="darkred", size=10, symbol="circle"),
-            )
-        )
-
-    # Highlight consecutive days spent in the reorder zone with transparent red
-    if highlight_reorder_zone:
-        active_df = df_scen if enable_scenario else df_base
-        active_rop = scen_reorder_point if enable_scenario else base_reorder_point
-
-        in_zone = active_df["Closing Balance"] <= active_rop
-        zone_groups = (in_zone != in_zone.shift()).cumsum()
-
-        for _, group in active_df[in_zone].groupby(zone_groups):
-            x0 = group["Date"].iloc[0] - pd.Timedelta(hours=12)
-            x1 = group["Date"].iloc[-1] + pd.Timedelta(hours=12)
-            chart_fig.add_vrect(
-                x0=x0,
-                x1=x1,
-                fillcolor="rgba(255, 0, 0, 0.15)",
-                layer="below",
-                line_width=0,
-            )
-
-        # Dummy scatter trace to display the reorder zone shading in the legend
-        chart_fig.add_trace(
-            go.Scatter(
-                x=[None],
-                y=[None],
-                mode="markers",
-                marker=dict(
-                    size=12,
-                    color="rgba(255, 0, 0, 0.15)",
-                    symbol="square",
-                    line=dict(color="rgba(255, 0, 0, 0.4)", width=1),
-                ),
-                name="Reorder Zone Days",
             )
         )
 

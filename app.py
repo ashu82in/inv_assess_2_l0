@@ -312,6 +312,8 @@ def run_simulation(
 
     kpis = {}
     kpis["stockout_days"] = (df["Unmet Demand"] > 0).sum()
+    kpis["days_in_reorder_zone"] = int((df["Closing Balance"] <= rop).sum())
+    kpis["days_outside_reorder_zone"] = int(len(df) - kpis["days_in_reorder_zone"])
 
     if total_demand_volume > 0:
         kpis["fill_rate"] = (
@@ -339,7 +341,7 @@ def run_simulation(
     )
     df["Holding Cost"] = df["Inventory Value"] * hc_rate / 365
     kpis["total_holding_cost"] = df["Holding Cost"].sum()
-    kpis["number_of_orders"] = (df["New Order"] > 0).sum()
+    kpis["number_of_orders"] = int((df["New Order"] > 0).sum())
     kpis["total_ordering_cost"] = kpis["number_of_orders"] * oc
     kpis["total_inventory_cost"] = (
         kpis["total_holding_cost"] + kpis["total_ordering_cost"]
@@ -707,3 +709,32 @@ st.divider()
 st.subheader("Inventory Behaviour: Reorder Zone Highlighted")
 fig_reorder = create_inventory_chart(highlight_reorder_zone=True)
 st.plotly_chart(fig_reorder, use_container_width=True)
+
+# Reorder Zone Summary Metrics
+rz1, rz2, rz3, rz4 = st.columns(4)
+rz1.metric(
+    "Total Number of Days",
+    num_days,
+)
+rz2.metric(
+    "Days in Reorder Zone",
+    kpis_scen["days_in_reorder_zone"],
+    calc_delta(
+        kpis_base["days_in_reorder_zone"], kpis_scen["days_in_reorder_zone"]
+    ),
+    delta_color="inverse",
+)
+rz3.metric(
+    "Days Outside Reorder Zone",
+    kpis_scen["days_outside_reorder_zone"],
+    calc_delta(
+        kpis_base["days_outside_reorder_zone"],
+        kpis_scen["days_outside_reorder_zone"],
+    ),
+)
+rz4.metric(
+    "Number of Orders",
+    kpis_scen["number_of_orders"],
+    calc_delta(kpis_base["number_of_orders"], kpis_scen["number_of_orders"]),
+    delta_color="inverse",
+)

@@ -230,7 +230,6 @@ def run_simulation(
         )
 
         new_order = 0
-        # Trigger order when inventory position is equal to or less than ROP
         if inventory_position <= rop:
             new_order = oq
             pipeline_orders.append((day + lt, oq))
@@ -294,7 +293,6 @@ def run_simulation(
             hc_total += (clos_pipe * uv) * hc_rate / 365
 
             inv_pos = inv + pl_qty
-            # Trigger order when inventory position is equal to or less than ROP
             if inv_pos <= rop:
                 pl_orders.append((d + lt, test_oq))
                 orders_count += 1
@@ -316,6 +314,27 @@ def run_simulation(
     kpis["stockout_days"] = (df["Unmet Demand"] > 0).sum()
     kpis["days_in_reorder_zone"] = int((df["Closing Balance"] <= rop).sum())
     kpis["days_outside_reorder_zone"] = int(len(df) - kpis["days_in_reorder_zone"])
+
+    # Math logic to identify fully completed reorder-to-reorder cycles
+    in_zone = df["Closing Balance"] <= rop
+    zone_groups = (in_zone != in_zone.shift()).cumsum()
+    
+    complete_cycles = 0
+    df["Complete_Cycle"] = False
+    
+    grouped = df[in_zone].groupby(zone_groups)
+    group_list = list(grouped)
+    
+    # Iterate to verify each group transitions down fully rather than being cut off at simulation bounds
+    for i, (g_id, group) in enumerate(group_list):
+        is_boundary_start = (i == 0 and df.iloc[0]["Closing Balance"] <= rop)
+        is_boundary_end = (i == len(group_list) - 1 and df.iloc[-1]["Closing Balance"] <= rop)
+        
+        if not is_boundary_start and not is_boundary_end:
+            complete_cycles += 1
+            df.loc[group.index, "Complete_Cycle"] = True
+
+    kpis["complete_cycles"] = int(complete_cycles)
 
     if total_demand_volume > 0:
         kpis["fill_rate"] = (
@@ -532,10 +551,10 @@ st.divider()
 # ------------------------------------------------
 # Helper Function to Build Inventory Behaviour Chart
 # ------------------------------------------------
-def create_inventory_chart(highlight_reorder_zone=False):
+def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete_cycles=False):
     chart_fig = go.Figure()
 
-    # Highlight consecutive days spent in the reorder zone using a toggleable trace
+    # Shade the reorder zone based on either overall boundaries or fully completed cycles
     if highlight_reorder_zone:
         active_df = df_scen if enable_scenario else df_base
         active_rop = scen_reorder_point if enable_scenario else base_reorder_point
@@ -553,7 +572,11 @@ def create_inventory_chart(highlight_reorder_zone=False):
         )
         y_top = y_max * 1.05 if y_max > 0 else 10
 
-        in_zone = active_df["Closing Balance"] <= active_rop
+        if highlight_only_complete_cycles:
+            in_zone = active_df["Complete_Cycle"] == True
+        else:
+            in_zone = active_df["Closing Balance"] <= active_rop
+
         zone_groups = (in_zone != in_zone.shift()).cumsum()
 
         poly_x = []
@@ -572,7 +595,7 @@ def create_inventory_chart(highlight_reorder_zone=False):
                 fillcolor="rgba(255, 0, 0, 0.15)",
                 line=dict(width=0),
                 mode="lines",
-                name="Reorder Zone Days",
+                name="Complete Reorder Cycles" if highlight_only_complete_cycles else "Reorder Zone Days",
                 hoverinfo="skip",
             )
         )
@@ -639,7 +662,7 @@ def create_inventory_chart(highlight_reorder_zone=False):
         hovermode="x unified",
         yaxis=dict(
             rangemode="tozero"
-        ),  # Forces Y-axis to always include 0 on bottom
+        ),
     )
     return chart_fig
 
@@ -692,7 +715,7 @@ fig_demand.update_layout(
     yaxis_title="Demand Quantity",
     yaxis=dict(
         rangemode="tozero"
-    ),  # Forces Y-axis to always include 0 on bottom
+    ),
 )
 st.plotly_chart(fig_demand, use_container_width=True)
 
@@ -713,14 +736,14 @@ else:
 st.divider()
 
 # ------------------------------------------------
-# Inventory Behaviour Chart with Reorder Zone Highlighted
+# Inventory Behaviour Chart with Complete Reorder Cycles Only Highlighted
 # ------------------------------------------------
-st.subheader("Inventory Behaviour: Reorder Zone Highlighted")
-fig_reorder = create_inventory_chart(highlight_reorder_zone=True)
+st.subheader("Inventory Behaviour: Complete Reorder Cycles Highlighted")
+fig_reorder = create_inventory_chart(highlight_reorder_zone=True, highlight_only_complete_cycles=True)
 st.plotly_chart(fig_reorder, use_container_width=True)
 
-# Reorder Zone Summary Metrics
-rz1, rz2, rz3, rz4 = st.columns(4)
+# Reorder Zone Summary Metrics with Complete Cycles Column Included
+rz1, rz2, rz3, rz4, rz5 = st.columns(5)
 rz1.metric(
     "Total Number of Days",
     num_days,
@@ -746,4 +769,10 @@ rz4.metric(
     kpis_scen["number_of_orders"],
     calc_delta(kpis_base["number_of_orders"], kpis_scen["number_of_orders"]),
     delta_color="inverse",
+)
+rz5.metric(
+    "Complete Cycles",
+    kpis_scen["complete_cycles"],
+    calc_delta(kpis_base["complete_cycles"], kpis_scen["complete_cycles"]),
+    delta_color="off" if kpis_base["complete_cycles"] == kpis_scen["complete_cycles"] else ("normal" if kpis_scen["complete_cycles"] > kpis_base["complete_cycles"] else "inverse")
 )

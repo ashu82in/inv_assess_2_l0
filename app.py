@@ -313,25 +313,30 @@ def run_simulation(
     kpis = {}
     kpis["stockout_days"] = (df["Unmet Demand"] > 0).sum()
 
-    # Slice window strictly between the first order and the last order
-    order_indices = df.index[df["New Order"] > 0].tolist()
-    if len(order_indices) >= 2:
-        first_ord_idx = order_indices[0]
-        last_ord_idx = order_indices[-1]
-        df_trimmed = df.loc[first_ord_idx:last_ord_idx].copy()
-        kpis["trimmed_start_date"] = df.loc[first_ord_idx, "Date"]
-        kpis["trimmed_end_date"] = df.loc[last_ord_idx, "Date"]
-        kpis["trimmed_total_days"] = int(len(df_trimmed))
+    # Slice complete cycles from the 1st order receipt to the day before the last order receipt
+    receipt_indices = df.index[df["Shipment Received"] > 0].tolist()
+    if len(receipt_indices) >= 2:
+        first_rec_idx = receipt_indices[0]
+        last_rec_idx = receipt_indices[-1]
+        plot_start_idx = max(0, first_rec_idx - 1)  # 1 day earlier so vertical jump is shown on Day 1
+        end_idx = last_rec_idx - 1  # Day before the last order was received
+
+        df_cycle_days = df.loc[first_rec_idx:end_idx].copy()
+        kpis["trimmed_plot_start_date"] = df.loc[plot_start_idx, "Date"]
+        kpis["trimmed_cycle_start_date"] = df.loc[first_rec_idx, "Date"]
+        kpis["trimmed_end_date"] = df.loc[end_idx, "Date"]
+        kpis["trimmed_total_days"] = int(len(df_cycle_days))
         kpis["trimmed_days_in_reorder_zone"] = int(
-            (df_trimmed["Closing Balance"] <= rop).sum()
+            (df_cycle_days["Closing Balance"] <= rop).sum()
         )
         kpis["trimmed_days_outside_reorder_zone"] = int(
             kpis["trimmed_total_days"] - kpis["trimmed_days_in_reorder_zone"]
         )
-        kpis["trimmed_orders"] = int(len(order_indices))
-        kpis["complete_cycles"] = int(len(order_indices) - 1)
+        kpis["trimmed_orders"] = int((df_cycle_days["New Order"] > 0).sum())
+        kpis["complete_cycles"] = int(len(receipt_indices) - 1)
     else:
-        kpis["trimmed_start_date"] = df["Date"].iloc[0]
+        kpis["trimmed_plot_start_date"] = df["Date"].iloc[0]
+        kpis["trimmed_cycle_start_date"] = df["Date"].iloc[0]
         kpis["trimmed_end_date"] = df["Date"].iloc[-1]
         kpis["trimmed_total_days"] = int(len(df))
         kpis["trimmed_days_in_reorder_zone"] = int(
@@ -340,7 +345,7 @@ def run_simulation(
         kpis["trimmed_days_outside_reorder_zone"] = int(
             kpis["trimmed_total_days"] - kpis["trimmed_days_in_reorder_zone"]
         )
-        kpis["trimmed_orders"] = int(len(order_indices))
+        kpis["trimmed_orders"] = int((df["New Order"] > 0).sum())
         kpis["complete_cycles"] = 0
 
     if total_demand_volume > 0:
@@ -564,21 +569,25 @@ def create_inventory_chart(highlight_reorder_zone=False, trim_to_complete_cycles
     plot_df_base = df_base.copy()
     plot_df_scen = df_scen.copy()
 
-    # Clip data strictly between the first order and the last order
+    # Clip data from 1 day before 1st receipt (showing vertical arrival jump) to day before last receipt
     if trim_to_complete_cycles:
         active_kpis = kpis_scen if enable_scenario else kpis_base
-        start_dt = active_kpis["trimmed_start_date"]
+        plot_start_dt = active_kpis["trimmed_plot_start_date"]
+        cycle_start_dt = active_kpis["trimmed_cycle_start_date"]
         end_dt = active_kpis["trimmed_end_date"]
+
         plot_df_base = plot_df_base[
-            (plot_df_base["Date"] >= start_dt) & (plot_df_base["Date"] <= end_dt)
+            (plot_df_base["Date"] >= plot_start_dt) & (plot_df_base["Date"] <= end_dt)
         ]
         plot_df_scen = plot_df_scen[
-            (plot_df_scen["Date"] >= start_dt) & (plot_df_scen["Date"] <= end_dt)
+            (plot_df_scen["Date"] >= plot_start_dt) & (plot_df_scen["Date"] <= end_dt)
         ]
 
-    # Shade the reorder zone days within the plotted window
+    # Shade the reorder zone days within the actual complete cycle window
     if highlight_reorder_zone:
         active_df = plot_df_scen if enable_scenario else plot_df_base
+        if trim_to_complete_cycles:
+            active_df = active_df[active_df["Date"] >= cycle_start_dt]
         active_rop = scen_reorder_point if enable_scenario else base_reorder_point
 
         y_min = min(
@@ -754,18 +763,18 @@ else:
 st.divider()
 
 # ------------------------------------------------
-# Inventory Behaviour Chart (First Order to Last Order Only)
+# Inventory Behaviour Chart (Complete Sawtooth Cycles Only)
 # ------------------------------------------------
-st.subheader("Inventory Behaviour: Complete Cycles (First Order to Last Order)")
+st.subheader("Inventory Behaviour: Complete Sawtooth Cycles (1st Receipt to Last Receipt)")
 fig_reorder = create_inventory_chart(
     highlight_reorder_zone=True, trim_to_complete_cycles=True
 )
 st.plotly_chart(fig_reorder, use_container_width=True)
 
-# Reorder Zone Summary Metrics (Trimmed Window: First Order to Last Order)
+# Reorder Zone Summary Metrics (Complete Cycles Window)
 rz1, rz2, rz3, rz4, rz5 = st.columns(5)
 rz1.metric(
-    "Total Days (First to Last Order)",
+    "Total Days in Complete Cycles",
     kpis_scen["trimmed_total_days"],
     calc_delta(
         kpis_base["trimmed_total_days"], kpis_scen["trimmed_total_days"]

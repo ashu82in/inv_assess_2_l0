@@ -312,29 +312,36 @@ def run_simulation(
 
     kpis = {}
     kpis["stockout_days"] = (df["Unmet Demand"] > 0).sum()
-    kpis["days_in_reorder_zone"] = int((df["Closing Balance"] <= rop).sum())
-    kpis["days_outside_reorder_zone"] = int(len(df) - kpis["days_in_reorder_zone"])
 
-    # Math logic to identify fully completed reorder-to-reorder cycles
-    in_zone = df["Closing Balance"] <= rop
-    zone_groups = (in_zone != in_zone.shift()).cumsum()
-    
-    complete_cycles = 0
-    df["Complete_Cycle"] = False
-    
-    grouped = df[in_zone].groupby(zone_groups)
-    group_list = list(grouped)
-    
-    # Iterate to verify each group transitions down fully rather than being cut off at simulation bounds
-    for i, (g_id, group) in enumerate(group_list):
-        is_boundary_start = (i == 0 and df.iloc[0]["Closing Balance"] <= rop)
-        is_boundary_end = (i == len(group_list) - 1 and df.iloc[-1]["Closing Balance"] <= rop)
-        
-        if not is_boundary_start and not is_boundary_end:
-            complete_cycles += 1
-            df.loc[group.index, "Complete_Cycle"] = True
-
-    kpis["complete_cycles"] = int(complete_cycles)
+    # Slice window strictly between the first order and the last order
+    order_indices = df.index[df["New Order"] > 0].tolist()
+    if len(order_indices) >= 2:
+        first_ord_idx = order_indices[0]
+        last_ord_idx = order_indices[-1]
+        df_trimmed = df.loc[first_ord_idx:last_ord_idx].copy()
+        kpis["trimmed_start_date"] = df.loc[first_ord_idx, "Date"]
+        kpis["trimmed_end_date"] = df.loc[last_ord_idx, "Date"]
+        kpis["trimmed_total_days"] = int(len(df_trimmed))
+        kpis["trimmed_days_in_reorder_zone"] = int(
+            (df_trimmed["Closing Balance"] <= rop).sum()
+        )
+        kpis["trimmed_days_outside_reorder_zone"] = int(
+            kpis["trimmed_total_days"] - kpis["trimmed_days_in_reorder_zone"]
+        )
+        kpis["trimmed_orders"] = int(len(order_indices))
+        kpis["complete_cycles"] = int(len(order_indices) - 1)
+    else:
+        kpis["trimmed_start_date"] = df["Date"].iloc[0]
+        kpis["trimmed_end_date"] = df["Date"].iloc[-1]
+        kpis["trimmed_total_days"] = int(len(df))
+        kpis["trimmed_days_in_reorder_zone"] = int(
+            (df["Closing Balance"] <= rop).sum()
+        )
+        kpis["trimmed_days_outside_reorder_zone"] = int(
+            kpis["trimmed_total_days"] - kpis["trimmed_days_in_reorder_zone"]
+        )
+        kpis["trimmed_orders"] = int(len(order_indices))
+        kpis["complete_cycles"] = 0
 
     if total_demand_volume > 0:
         kpis["fill_rate"] = (
@@ -551,32 +558,43 @@ st.divider()
 # ------------------------------------------------
 # Helper Function to Build Inventory Behaviour Chart
 # ------------------------------------------------
-def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete_cycles=False):
+def create_inventory_chart(highlight_reorder_zone=False, trim_to_complete_cycles=False):
     chart_fig = go.Figure()
 
-    # Shade the reorder zone based on either overall boundaries or fully completed cycles
+    plot_df_base = df_base.copy()
+    plot_df_scen = df_scen.copy()
+
+    # Clip data strictly between the first order and the last order
+    if trim_to_complete_cycles:
+        active_kpis = kpis_scen if enable_scenario else kpis_base
+        start_dt = active_kpis["trimmed_start_date"]
+        end_dt = active_kpis["trimmed_end_date"]
+        plot_df_base = plot_df_base[
+            (plot_df_base["Date"] >= start_dt) & (plot_df_base["Date"] <= end_dt)
+        ]
+        plot_df_scen = plot_df_scen[
+            (plot_df_scen["Date"] >= start_dt) & (plot_df_scen["Date"] <= end_dt)
+        ]
+
+    # Shade the reorder zone days within the plotted window
     if highlight_reorder_zone:
-        active_df = df_scen if enable_scenario else df_base
+        active_df = plot_df_scen if enable_scenario else plot_df_base
         active_rop = scen_reorder_point if enable_scenario else base_reorder_point
 
         y_min = min(
             0,
-            df_base["Closing Balance"].min(),
-            df_scen["Closing Balance"].min() if enable_scenario else 0,
+            plot_df_base["Closing Balance"].min(),
+            plot_df_scen["Closing Balance"].min() if enable_scenario else 0,
         )
         y_max = max(
-            df_base["Closing Balance"].max(),
-            df_scen["Closing Balance"].max() if enable_scenario else 0,
+            plot_df_base["Closing Balance"].max(),
+            plot_df_scen["Closing Balance"].max() if enable_scenario else 0,
             base_reorder_point,
             scen_reorder_point if enable_scenario else 0,
         )
         y_top = y_max * 1.05 if y_max > 0 else 10
 
-        if highlight_only_complete_cycles:
-            in_zone = active_df["Complete_Cycle"] == True
-        else:
-            in_zone = active_df["Closing Balance"] <= active_rop
-
+        in_zone = active_df["Closing Balance"] <= active_rop
         zone_groups = (in_zone != in_zone.shift()).cumsum()
 
         poly_x = []
@@ -595,15 +613,15 @@ def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete
                 fillcolor="rgba(255, 0, 0, 0.15)",
                 line=dict(width=0),
                 mode="lines",
-                name="Complete Reorder Cycles" if highlight_only_complete_cycles else "Reorder Zone Days",
+                name="Reorder Zone Days",
                 hoverinfo="skip",
             )
         )
 
     chart_fig.add_trace(
         go.Scatter(
-            x=df_base["Date"],
-            y=df_base["Closing Balance"],
+            x=plot_df_base["Date"],
+            y=plot_df_base["Closing Balance"],
             name="Base Closing Inventory",
             line=dict(color="royalblue", width=2),
         )
@@ -616,7 +634,7 @@ def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete
         annotation_text="Base Reorder Point",
     )
 
-    stockouts_base = df_base[df_base["Unmet Demand"] > 0]
+    stockouts_base = plot_df_base[plot_df_base["Unmet Demand"] > 0]
     chart_fig.add_trace(
         go.Scatter(
             x=stockouts_base["Date"],
@@ -630,8 +648,8 @@ def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete
     if enable_scenario:
         chart_fig.add_trace(
             go.Scatter(
-                x=df_scen["Date"],
-                y=df_scen["Closing Balance"],
+                x=plot_df_scen["Date"],
+                y=plot_df_scen["Closing Balance"],
                 name="Scenario Closing Inventory",
                 line=dict(color="darkorange", width=2),
             )
@@ -645,7 +663,7 @@ def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete
                 annotation_text="Scenario Reorder Point",
             )
 
-        stockouts_scen = df_scen[df_scen["Unmet Demand"] > 0]
+        stockouts_scen = plot_df_scen[plot_df_scen["Unmet Demand"] > 0]
         chart_fig.add_trace(
             go.Scatter(
                 x=stockouts_scen["Date"],
@@ -671,7 +689,7 @@ def create_inventory_chart(highlight_reorder_zone=False, highlight_only_complete
 # Inventory Behaviour Chart (Both Cases)
 # ------------------------------------------------
 st.subheader("Inventory Behaviour: Base vs Scenario")
-fig = create_inventory_chart(highlight_reorder_zone=False)
+fig = create_inventory_chart(highlight_reorder_zone=False, trim_to_complete_cycles=False)
 st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------------
@@ -736,43 +754,48 @@ else:
 st.divider()
 
 # ------------------------------------------------
-# Inventory Behaviour Chart with Complete Reorder Cycles Only Highlighted
+# Inventory Behaviour Chart (First Order to Last Order Only)
 # ------------------------------------------------
-st.subheader("Inventory Behaviour: Complete Reorder Cycles Highlighted")
-fig_reorder = create_inventory_chart(highlight_reorder_zone=True, highlight_only_complete_cycles=True)
+st.subheader("Inventory Behaviour: Complete Cycles (First Order to Last Order)")
+fig_reorder = create_inventory_chart(
+    highlight_reorder_zone=True, trim_to_complete_cycles=True
+)
 st.plotly_chart(fig_reorder, use_container_width=True)
 
-# Reorder Zone Summary Metrics with Complete Cycles Column Included
+# Reorder Zone Summary Metrics (Trimmed Window: First Order to Last Order)
 rz1, rz2, rz3, rz4, rz5 = st.columns(5)
 rz1.metric(
-    "Total Number of Days",
-    num_days,
+    "Total Days (First to Last Order)",
+    kpis_scen["trimmed_total_days"],
+    calc_delta(
+        kpis_base["trimmed_total_days"], kpis_scen["trimmed_total_days"]
+    ),
 )
 rz2.metric(
     "Days in Reorder Zone",
-    kpis_scen["days_in_reorder_zone"],
+    kpis_scen["trimmed_days_in_reorder_zone"],
     calc_delta(
-        kpis_base["days_in_reorder_zone"], kpis_scen["days_in_reorder_zone"]
+        kpis_base["trimmed_days_in_reorder_zone"],
+        kpis_scen["trimmed_days_in_reorder_zone"],
     ),
     delta_color="inverse",
 )
 rz3.metric(
     "Days Outside Reorder Zone",
-    kpis_scen["days_outside_reorder_zone"],
+    kpis_scen["trimmed_days_outside_reorder_zone"],
     calc_delta(
-        kpis_base["days_outside_reorder_zone"],
-        kpis_scen["days_outside_reorder_zone"],
+        kpis_base["trimmed_days_outside_reorder_zone"],
+        kpis_scen["trimmed_days_outside_reorder_zone"],
     ),
 )
 rz4.metric(
-    "Number of Orders",
-    kpis_scen["number_of_orders"],
-    calc_delta(kpis_base["number_of_orders"], kpis_scen["number_of_orders"]),
+    "Orders Placed in Window",
+    kpis_scen["trimmed_orders"],
+    calc_delta(kpis_base["trimmed_orders"], kpis_scen["trimmed_orders"]),
     delta_color="inverse",
 )
 rz5.metric(
     "Complete Cycles",
     kpis_scen["complete_cycles"],
     calc_delta(kpis_base["complete_cycles"], kpis_scen["complete_cycles"]),
-    delta_color="off" if kpis_base["complete_cycles"] == kpis_scen["complete_cycles"] else ("normal" if kpis_scen["complete_cycles"] > kpis_base["complete_cycles"] else "inverse")
 )

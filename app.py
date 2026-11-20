@@ -589,7 +589,7 @@ def create_inventory_chart(highlight_reorder_zone=False):
     chart_fig.add_hline(
         y=base_reorder_point,
         line_dash="dash",
-        line_color="royalblue",
+        line_color="red",
         annotation_text="Base Reorder Point",
     )
 
@@ -618,7 +618,7 @@ def create_inventory_chart(highlight_reorder_zone=False):
             chart_fig.add_hline(
                 y=scen_reorder_point,
                 line_dash="dash",
-                line_color="darkorange",
+                line_color="crimson",
                 annotation_text="Scenario Reorder Point",
             )
 

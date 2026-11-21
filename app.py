@@ -750,6 +750,23 @@ st.plotly_chart(fig_demand, use_container_width=True)
 # Collapsible Demand Histogram & Frequency Data
 # ------------------------------------------------
 with st.expander("Demand Histogram & Frequency Distribution", expanded=False):
+    demand_series = df_base["Demand"]
+    d_min = float(demand_series.min())
+    d_max = float(demand_series.max())
+    d_mean = float(demand_series.mean())
+    d_std = float(demand_series.std())
+    d_cov = d_std / d_mean if d_mean > 0 else 0.0
+
+    # Summary Metrics Row at the Top of the Section
+    dm1, dm2, dm3, dm4, dm5 = st.columns(5)
+    dm1.metric("Min Demand", f"{d_min:,.1f}")
+    dm2.metric("Max Demand", f"{d_max:,.1f}")
+    dm3.metric("Average Demand", f"{d_mean:,.2f}")
+    dm4.metric("Std Dev", f"{d_std:,.2f}")
+    dm5.metric("CoV", f"{d_cov:,.2f}")
+
+    st.divider()
+
     ctrl_col1, ctrl_col2 = st.columns([1, 2])
     bin_mode = ctrl_col1.radio(
         "Binning Method",
@@ -757,10 +774,6 @@ with st.expander("Demand Histogram & Frequency Distribution", expanded=False):
         horizontal=True,
         key="demand_bin_mode",
     )
-
-    demand_series = df_base["Demand"]
-    d_min = float(demand_series.min())
-    d_max = float(demand_series.max())
 
     if bin_mode == "Number of Bins":
         num_bins = ctrl_col2.slider(
@@ -798,7 +811,6 @@ with st.expander("Demand Histogram & Frequency Distribution", expanded=False):
         high = edges[i + 1]
         is_last = i == len(counts) - 1
         bracket_right = "]" if is_last else ")"
-        # Format cleanly as integers when edges have no fractional part
         if low.is_integer() and high.is_integer():
             label = f"[{int(low)}, {int(high)}{bracket_right}"
         else:
@@ -817,35 +829,32 @@ with st.expander("Demand Histogram & Frequency Distribution", expanded=False):
         "Cumulative Frequency (%)": np.round(cum_freq, 2),
     })
 
-    hist_col, table_col = st.columns([1.3, 1])
+    # Stacked Layout: Histogram first, followed by Frequency Table
+    fig_hist = go.Figure(
+        data=[
+            go.Bar(
+                x=bin_labels,
+                y=counts,
+                marker_color="mediumseagreen",
+                marker_line_color="darkgreen",
+                marker_line_width=1,
+                text=counts,
+                textposition="auto",
+                name="Frequency (Days)",
+            )
+        ]
+    )
+    fig_hist.update_layout(
+        title="Demand Frequency Histogram",
+        xaxis_title="Demand Range",
+        yaxis_title="Frequency (Days)",
+        bargap=0.05,
+        yaxis=dict(rangemode="tozero"),
+    )
+    st.plotly_chart(fig_hist, use_container_width=True)
 
-    with hist_col:
-        fig_hist = go.Figure(
-            data=[
-                go.Bar(
-                    x=bin_labels,
-                    y=counts,
-                    marker_color="mediumseagreen",
-                    marker_line_color="darkgreen",
-                    marker_line_width=1,
-                    text=counts,
-                    textposition="auto",
-                    name="Frequency (Days)",
-                )
-            ]
-        )
-        fig_hist.update_layout(
-            title="Demand Frequency Histogram",
-            xaxis_title="Demand Range",
-            yaxis_title="Frequency (Days)",
-            bargap=0.05,
-            yaxis=dict(rangemode="tozero"),
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
-
-    with table_col:
-        st.markdown("**Demand Frequency Table**")
-        st.dataframe(freq_df, use_container_width=True, hide_index=True)
+    st.markdown("**Demand Frequency Table**")
+    st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
 # ------------------------------------------------
 # Data Tables

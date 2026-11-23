@@ -74,13 +74,15 @@ if st.sidebar.button("Reset Demand Scenario", type="primary"):
     st.session_state.sim_days = num_days
     st.session_state.sim_avg_demand = base_avg_demand
     st.session_state.sim_cov = base_cov
+    # Clear any manual scenario demand override on reset
+    if "scen_demand_sequence" in st.session_state:
+        del st.session_state["scen_demand_sequence"]
 elif (
     "base_demand_sequence" not in st.session_state
     or st.session_state.get("sim_days") != num_days
     or st.session_state.get("sim_avg_demand") != base_avg_demand
     or st.session_state.get("sim_cov") != base_cov
 ):
-
     np.random.seed(42)
     st.session_state.base_demand_sequence = np.maximum(
         0, np.random.normal(base_avg_demand, base_avg_demand * base_cov, num_days)
@@ -88,6 +90,8 @@ elif (
     st.session_state.sim_days = num_days
     st.session_state.sim_avg_demand = base_avg_demand
     st.session_state.sim_cov = base_cov
+    if "scen_demand_sequence" in st.session_state:
+        del st.session_state["scen_demand_sequence"]
 
 base_demand = st.session_state.base_demand_sequence
 dates = pd.date_range(start="2024-01-01", periods=num_days)
@@ -160,16 +164,32 @@ with col2:
 
             scen_holding_cost_rate = scen_holding_cost_percent / 100
 
-            if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
-                scen_demand = base_demand
-            else:
-                np.random.seed(99)
-                scen_demand = np.maximum(
-                    0,
-                    np.random.normal(
-                        scen_avg_demand, scen_avg_demand * scen_cov, num_days
-                    ),
-                ).round()
+            # Generate or retain scenario demand sequence (allowing manual edits in the table)
+            scen_params_changed = (
+                st.session_state.get("scen_sim_days") != num_days
+                or st.session_state.get("scen_sim_avg_demand") != scen_avg_demand
+                or st.session_state.get("scen_sim_cov") != scen_cov
+            )
+
+            if (
+                "scen_demand_sequence" not in st.session_state
+                or scen_params_changed
+            ):
+                if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
+                    st.session_state.scen_demand_sequence = base_demand.copy()
+                else:
+                    np.random.seed(99)
+                    st.session_state.scen_demand_sequence = np.maximum(
+                        0,
+                        np.random.normal(
+                            scen_avg_demand, scen_avg_demand * scen_cov, num_days
+                        ),
+                    ).round()
+                st.session_state.scen_sim_days = num_days
+                st.session_state.scen_sim_avg_demand = scen_avg_demand
+                st.session_state.scen_sim_cov = scen_cov
+
+            scen_demand = st.session_state.scen_demand_sequence
         else:
             st.info(
                 "Scenario analysis is disabled. Check the box above to enable scenario inputs."
@@ -299,7 +319,9 @@ def run_simulation(
 
         return hc_total + (orders_count * oc)
 
-    annual_demand = avg_dem * 365
+    # Use actual realized mean demand for EOQ so table edits reflect accurately
+    effective_avg_dem = df["Demand"].mean() if len(df) > 0 else avg_dem
+    annual_demand = effective_avg_dem * 365
     holding_cost_per_unit = uv * hc_rate
     eoq = (
         np.sqrt((2 * annual_demand * oc) / holding_cost_per_unit)
@@ -857,18 +879,66 @@ with st.expander("Demand Histogram & Frequency Distribution", expanded=False):
     st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
 # ------------------------------------------------
-# Data Tables
+# Data Tables (Editable Demand Column)
 # ------------------------------------------------
 st.subheader("Simulation Data")
+st.caption("Edit any value in the **Demand** column below to recalculate all tables, KPIs, and charts without altering your sidebar sliders.")
+
+readonly_cols = [col for col in df_base.columns if col != "Demand"]
+demand_col_config = {
+    "Demand": st.column_config.NumberColumn(
+        "Demand (Editable)",
+        min_value=0,
+        step=1,
+        help="Modify daily demand values directly to see live impact across all charts and metrics.",
+    )
+}
 
 if enable_scenario:
     tab1, tab2 = st.tabs(["Base Case Data", "Scenario Data"])
     with tab1:
-        st.dataframe(df_base, use_container_width=True)
+        edited_base_df = st.data_editor(
+            df_base,
+            disabled=readonly_cols,
+            column_config=demand_col_config,
+            use_container_width=True,
+            hide_index=True,
+            key="editor_base_df",
+        )
+        new_base_demand = np.maximum(0, edited_base_df["Demand"].fillna(0).to_numpy())
+        if not np.array_equal(new_base_demand, st.session_state.base_demand_sequence):
+            st.session_state.base_demand_sequence = new_base_demand
+            # Keep scenario demand synced if scenario inputs match base inputs
+            if scen_avg_demand == base_avg_demand and scen_cov == base_cov:
+                st.session_state.scen_demand_sequence = new_base_demand.copy()
+            st.rerun()
+
     with tab2:
-        st.dataframe(df_scen, use_container_width=True)
+        edited_scen_df = st.data_editor(
+            df_scen,
+            disabled=readonly_cols,
+            column_config=demand_col_config,
+            use_container_width=True,
+            hide_index=True,
+            key="editor_scen_df",
+        )
+        new_scen_demand = np.maximum(0, edited_scen_df["Demand"].fillna(0).to_numpy())
+        if not np.array_equal(new_scen_demand, st.session_state.scen_demand_sequence):
+            st.session_state.scen_demand_sequence = new_scen_demand
+            st.rerun()
 else:
-    st.dataframe(df_base, use_container_width=True)
+    edited_base_df = st.data_editor(
+        df_base,
+        disabled=readonly_cols,
+        column_config=demand_col_config,
+        use_container_width=True,
+        hide_index=True,
+        key="editor_base_only_df",
+    )
+    new_base_demand = np.maximum(0, edited_base_df["Demand"].fillna(0).to_numpy())
+    if not np.array_equal(new_base_demand, st.session_state.base_demand_sequence):
+        st.session_state.base_demand_sequence = new_base_demand
+        st.rerun()
 
 st.divider()
 

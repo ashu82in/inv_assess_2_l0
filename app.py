@@ -372,16 +372,21 @@ def run_simulation(
             if (df.loc[c_start:c_end, "Unmet Demand"] > 0).any():
                 stockout_cycles += 1
 
+        pct_stockout_cycles = (
+            (stockout_cycles / num_complete_cycles) * 100
+            if num_complete_cycles > 0
+            else 0.0
+        )
+
         kpis["trimmed_total_demand"] = trim_demand
         kpis["trimmed_total_fulfilled"] = trim_fulfilled
         kpis["trimmed_fulfillment_ratio"] = (
             (trim_fulfilled / trim_demand) * 100 if trim_demand > 0 else 100.0
         )
         kpis["trimmed_stockout_cycles"] = int(stockout_cycles)
+        kpis["trimmed_pct_stockout_cycles"] = pct_stockout_cycles
         kpis["trimmed_cycle_service_level"] = (
-            (1.0 - (stockout_cycles / num_complete_cycles)) * 100
-            if num_complete_cycles > 0
-            else 100.0
+            100.0 - pct_stockout_cycles if num_complete_cycles > 0 else 100.0
         )
         kpis["trimmed_stockout_days"] = trim_stockout_days
         kpis["trimmed_pct_stockout_days"] = (
@@ -414,6 +419,7 @@ def run_simulation(
             (trim_fulfilled / trim_demand) * 100 if trim_demand > 0 else 100.0
         )
         kpis["trimmed_stockout_cycles"] = 0
+        kpis["trimmed_pct_stockout_cycles"] = 0.0
         kpis["trimmed_cycle_service_level"] = 100.0
         kpis["trimmed_stockout_days"] = trim_stockout_days
         kpis["trimmed_pct_stockout_days"] = (
@@ -1005,8 +1011,8 @@ fig_reorder = create_inventory_chart(
 )
 st.plotly_chart(fig_reorder, use_container_width=True)
 
-# Row 1: Cycle & Reorder Zone Day Breakdown
-rz1, rz2, rz3, rz4, rz5 = st.columns(5)
+# Row 1: Reorder Zone Day Breakdown
+rz1, rz2, rz3, rz4 = st.columns(4)
 rz1.metric(
     "Total Days in Complete Cycles",
     kpis_scen["trimmed_total_days"],
@@ -1037,13 +1043,8 @@ rz4.metric(
     calc_delta(kpis_base["trimmed_orders"], kpis_scen["trimmed_orders"]),
     delta_color="inverse",
 )
-rz5.metric(
-    "Complete Cycles",
-    kpis_scen["complete_cycles"],
-    calc_delta(kpis_base["complete_cycles"], kpis_scen["complete_cycles"]),
-)
 
-# Row 2: Demand & Fulfillment Performance (Complete Cycles Window)
+# Row 2: Demand & Fulfillment Performance
 df1, df2, df3 = st.columns(3)
 df1.metric(
     "Total Demand",
@@ -1070,10 +1071,15 @@ df3.metric(
     ),
 )
 
-# Row 3: Cycle Service Level & Stockout Exposure (Complete Cycles Window)
-so1, so2, so3, so4 = st.columns(4)
-so1.metric(
-    "Stockout Cycles",
+# Row 3: Cycle-Level Service Performance
+cy1, cy2, cy3, cy4 = st.columns(4)
+cy1.metric(
+    "Total Cycles",
+    kpis_scen["complete_cycles"],
+    calc_delta(kpis_base["complete_cycles"], kpis_scen["complete_cycles"]),
+)
+cy2.metric(
+    "Cycles Stocked Out",
     kpis_scen["trimmed_stockout_cycles"],
     calc_delta(
         kpis_base["trimmed_stockout_cycles"],
@@ -1081,7 +1087,17 @@ so1.metric(
     ),
     delta_color="inverse",
 )
-so2.metric(
+cy3.metric(
+    "% of Cycles Stocked Out",
+    f"{kpis_scen['trimmed_pct_stockout_cycles']:.1f}%",
+    calc_delta(
+        kpis_base["trimmed_pct_stockout_cycles"],
+        kpis_scen["trimmed_pct_stockout_cycles"],
+        is_pct=True,
+    ),
+    delta_color="inverse",
+)
+cy4.metric(
     "Cycle Service Level (%)",
     f"{kpis_scen['trimmed_cycle_service_level']:.1f}%",
     calc_delta(
@@ -1090,15 +1106,25 @@ so2.metric(
         is_pct=True,
     ),
 )
-so3.metric(
-    "Stockout Days",
+
+# Row 4: Day-Level Stockout Exposure
+ds1, ds2, ds3 = st.columns(3)
+ds1.metric(
+    "Total Days",
+    kpis_scen["trimmed_total_days"],
+    calc_delta(
+        kpis_base["trimmed_total_days"], kpis_scen["trimmed_total_days"]
+    ),
+)
+ds2.metric(
+    "No. of Days Stocked Out",
     kpis_scen["trimmed_stockout_days"],
     calc_delta(
         kpis_base["trimmed_stockout_days"], kpis_scen["trimmed_stockout_days"]
     ),
     delta_color="inverse",
 )
-so4.metric(
+ds3.metric(
     "% of Days Stocked Out",
     f"{kpis_scen['trimmed_pct_stockout_days']:.1f}%",
     calc_delta(

@@ -355,7 +355,40 @@ def run_simulation(
             kpis["trimmed_total_days"] - kpis["trimmed_days_in_reorder_zone"]
         )
         kpis["trimmed_orders"] = int((df_cycle_days["New Order"] > 0).sum())
-        kpis["complete_cycles"] = int(len(receipt_indices) - 1)
+        num_complete_cycles = int(len(receipt_indices) - 1)
+        kpis["complete_cycles"] = num_complete_cycles
+
+        # Complete Cycles Window: Demand, Fulfillment & Stockout Metrics
+        trim_demand = float(df_cycle_days["Demand"].sum())
+        trim_unmet = float(df_cycle_days["Unmet Demand"].sum())
+        trim_fulfilled = max(0.0, trim_demand - trim_unmet)
+        trim_stockout_days = int((df_cycle_days["Unmet Demand"] > 0).sum())
+
+        # Count how many of the N-1 complete cycles experienced at least one stockout day
+        stockout_cycles = 0
+        for c_idx in range(num_complete_cycles):
+            c_start = receipt_indices[c_idx]
+            c_end = receipt_indices[c_idx + 1] - 1
+            if (df.loc[c_start:c_end, "Unmet Demand"] > 0).any():
+                stockout_cycles += 1
+
+        kpis["trimmed_total_demand"] = trim_demand
+        kpis["trimmed_total_fulfilled"] = trim_fulfilled
+        kpis["trimmed_fulfillment_ratio"] = (
+            (trim_fulfilled / trim_demand) * 100 if trim_demand > 0 else 100.0
+        )
+        kpis["trimmed_stockout_cycles"] = int(stockout_cycles)
+        kpis["trimmed_cycle_service_level"] = (
+            (1.0 - (stockout_cycles / num_complete_cycles)) * 100
+            if num_complete_cycles > 0
+            else 100.0
+        )
+        kpis["trimmed_stockout_days"] = trim_stockout_days
+        kpis["trimmed_pct_stockout_days"] = (
+            (trim_stockout_days / kpis["trimmed_total_days"]) * 100
+            if kpis["trimmed_total_days"] > 0
+            else 0.0
+        )
     else:
         kpis["trimmed_plot_start_date"] = df["Date"].iloc[0]
         kpis["trimmed_cycle_start_date"] = df["Date"].iloc[0]
@@ -369,6 +402,25 @@ def run_simulation(
         )
         kpis["trimmed_orders"] = int((df["New Order"] > 0).sum())
         kpis["complete_cycles"] = 0
+
+        trim_demand = float(df["Demand"].sum())
+        trim_unmet = float(df["Unmet Demand"].sum())
+        trim_fulfilled = max(0.0, trim_demand - trim_unmet)
+        trim_stockout_days = int((df["Unmet Demand"] > 0).sum())
+
+        kpis["trimmed_total_demand"] = trim_demand
+        kpis["trimmed_total_fulfilled"] = trim_fulfilled
+        kpis["trimmed_fulfillment_ratio"] = (
+            (trim_fulfilled / trim_demand) * 100 if trim_demand > 0 else 100.0
+        )
+        kpis["trimmed_stockout_cycles"] = 0
+        kpis["trimmed_cycle_service_level"] = 100.0
+        kpis["trimmed_stockout_days"] = trim_stockout_days
+        kpis["trimmed_pct_stockout_days"] = (
+            (trim_stockout_days / kpis["trimmed_total_days"]) * 100
+            if kpis["trimmed_total_days"] > 0
+            else 0.0
+        )
 
     if total_demand_volume > 0:
         kpis["fill_rate"] = (
@@ -444,12 +496,14 @@ else:
     df_scen, kpis_scen = df_base, kpis_base
 
 
-def calc_delta(base, scen):
+def calc_delta(base, scen, is_pct=False):
     if not enable_scenario:
         return None
-    if base == 0:
-        return f"{scen - base:,.0f} (N/A)"
     diff = scen - base
+    if is_pct:
+        return f"{diff:+.1f} pp"
+    if base == 0:
+        return f"{diff:,.0f} (N/A)"
     pct = (diff / base) * 100
     return f"{diff:,.0f} ({pct:+.1f}%)"
 
@@ -468,7 +522,7 @@ c1.metric(
 c2.metric(
     "Fill Rate (%)",
     f"{kpis_scen['fill_rate']:.1f}%",
-    calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"]),
+    calc_delta(kpis_base["fill_rate"], kpis_scen["fill_rate"], is_pct=True),
 )
 c3.metric(
     "Avg Age of Inv",
@@ -951,7 +1005,7 @@ fig_reorder = create_inventory_chart(
 )
 st.plotly_chart(fig_reorder, use_container_width=True)
 
-# Reorder Zone Summary Metrics (Complete Cycles Window)
+# Row 1: Cycle & Reorder Zone Day Breakdown
 rz1, rz2, rz3, rz4, rz5 = st.columns(5)
 rz1.metric(
     "Total Days in Complete Cycles",
@@ -987,4 +1041,70 @@ rz5.metric(
     "Complete Cycles",
     kpis_scen["complete_cycles"],
     calc_delta(kpis_base["complete_cycles"], kpis_scen["complete_cycles"]),
+)
+
+# Row 2: Demand & Fulfillment Performance (Complete Cycles Window)
+df1, df2, df3 = st.columns(3)
+df1.metric(
+    "Total Demand",
+    f"{kpis_scen['trimmed_total_demand']:,.0f}",
+    calc_delta(
+        kpis_base["trimmed_total_demand"], kpis_scen["trimmed_total_demand"]
+    ),
+)
+df2.metric(
+    "Total Fulfilled",
+    f"{kpis_scen['trimmed_total_fulfilled']:,.0f}",
+    calc_delta(
+        kpis_base["trimmed_total_fulfilled"],
+        kpis_scen["trimmed_total_fulfilled"],
+    ),
+)
+df3.metric(
+    "Fulfillment Ratio (%)",
+    f"{kpis_scen['trimmed_fulfillment_ratio']:.1f}%",
+    calc_delta(
+        kpis_base["trimmed_fulfillment_ratio"],
+        kpis_scen["trimmed_fulfillment_ratio"],
+        is_pct=True,
+    ),
+)
+
+# Row 3: Cycle Service Level & Stockout Exposure (Complete Cycles Window)
+so1, so2, so3, so4 = st.columns(4)
+so1.metric(
+    "Stockout Cycles",
+    kpis_scen["trimmed_stockout_cycles"],
+    calc_delta(
+        kpis_base["trimmed_stockout_cycles"],
+        kpis_scen["trimmed_stockout_cycles"],
+    ),
+    delta_color="inverse",
+)
+so2.metric(
+    "Cycle Service Level (%)",
+    f"{kpis_scen['trimmed_cycle_service_level']:.1f}%",
+    calc_delta(
+        kpis_base["trimmed_cycle_service_level"],
+        kpis_scen["trimmed_cycle_service_level"],
+        is_pct=True,
+    ),
+)
+so3.metric(
+    "Stockout Days",
+    kpis_scen["trimmed_stockout_days"],
+    calc_delta(
+        kpis_base["trimmed_stockout_days"], kpis_scen["trimmed_stockout_days"]
+    ),
+    delta_color="inverse",
+)
+so4.metric(
+    "% of Days Stocked Out",
+    f"{kpis_scen['trimmed_pct_stockout_days']:.1f}%",
+    calc_delta(
+        kpis_base["trimmed_pct_stockout_days"],
+        kpis_scen["trimmed_pct_stockout_days"],
+        is_pct=True,
+    ),
+    delta_color="inverse",
 )
